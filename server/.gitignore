@@ -1,0 +1,21 @@
+# dependencies
+node_modules/
+
+# environment variables
+.env
+
+# logs
+logs/
+*.log
+npm-debug.log*
+
+# runtime data
+pids/
+*.pid
+*.seed
+
+# coverage
+coverage/
+
+# misc
+.DS_Store
