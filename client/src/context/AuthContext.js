@@ -14,12 +14,28 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
+
       if (user) {
-        const adminEmail = process.env.REACT_APP_ADMIN_EMAIL;
-        setIsAdmin(user.email === adminEmail);
+        try {
+          // Check custom claim first (production approach)
+          const tokenResult = await user.getIdTokenResult();
+          const hasAdminClaim = tokenResult.claims.role === 'admin';
+
+          // Fallback: also allow admin via env variable (works without running setAdminClaim.js)
+          const adminEmail = process.env.REACT_APP_ADMIN_EMAIL;
+          const isAdminEmail = adminEmail && user.email === adminEmail;
+
+          setIsAdmin(hasAdminClaim || isAdminEmail);
+        } catch (err) {
+          console.error('Failed to get token claims:', err.message);
+          // Last resort fallback
+          const adminEmail = process.env.REACT_APP_ADMIN_EMAIL;
+          setIsAdmin(adminEmail && user.email === adminEmail);
+        }
       } else {
         setIsAdmin(false);
       }
+
       setLoading(false);
     });
     return unsubscribe;
