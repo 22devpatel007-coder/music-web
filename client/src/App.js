@@ -3,21 +3,22 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { PlayerProvider } from './context/PlayerContext';
 
-import Login from './pages/Login';
-import Register from './pages/Register';
-import Home from './pages/Home';
-import Search from './pages/Search';
-import Player from './pages/Player';
-import NotFound from './pages/NotFound';
+import Login          from './pages/Login';
+import Register       from './pages/Register';
+import Home           from './pages/Home';
+import Search         from './pages/Search';
+import Player         from './pages/Player';
+import LikedSongs     from './pages/LikedSongs';
+import NotFound       from './pages/NotFound';
 
 import AdminDashboard from './admin/AdminDashboard';
-import UploadMusic from './admin/UploadMusic';
-import MusicList from './admin/MusicList';
-import UsersList from './admin/UsersList';
+import UploadMusic    from './admin/UploadMusic';
+import MusicList      from './admin/MusicList';
+import UsersList      from './admin/UsersList';
 
 import ProtectedRoute from './components/ProtectedRoute';
-import AdminRoute from './components/AdminRoute';
-import MusicPlayer from './components/MusicPlayer';
+import AdminRoute     from './components/AdminRoute';
+import MusicPlayer    from './components/MusicPlayer';
 
 function App() {
   return (
@@ -25,12 +26,12 @@ function App() {
       <AuthProvider>
         <PlayerProvider>
           <Routes>
-            {/* Public Routes */}
-            <Route path="/" element={<Login />} />
-            <Route path="/login" element={<Login />} />
+            {/* Public */}
+            <Route path="/"        element={<Login />} />
+            <Route path="/login"   element={<Login />} />
             <Route path="/register" element={<Register />} />
 
-            {/* Protected User Routes */}
+            {/* Protected user routes */}
             <Route path="/home" element={
               <ProtectedRoute><Home /></ProtectedRoute>
             } />
@@ -40,8 +41,11 @@ function App() {
             <Route path="/player/:id" element={
               <ProtectedRoute><Player /></ProtectedRoute>
             } />
+            <Route path="/liked" element={
+              <ProtectedRoute><LikedSongs /></ProtectedRoute>
+            } />
 
-            {/* Admin Routes */}
+            {/* Admin routes */}
             <Route path="/admin" element={
               <AdminRoute><AdminDashboard /></AdminRoute>
             } />
