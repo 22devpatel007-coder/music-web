@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { usePlayer } from '../context/PlayerContext';
 
 const MusicPlayer = () => {
-  const { currentSong, isPlaying, togglePlay, 
-    playNext, playPrev, audioRef } = usePlayer();
+  const { currentSong, isPlaying, togglePlay,
+    playNext, playPrev, audioRef,
+    repeat, cycleRepeat, shuffle, toggleShuffle } = usePlayer();
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
 
@@ -56,20 +57,44 @@ const MusicPlayer = () => {
         {/* Controls */}
         <div className="flex flex-col items-center w-2/4">
           <div className="flex items-center gap-6 mb-2">
+
+            {/* Shuffle */}
+            <button
+              onClick={toggleShuffle}
+              title="Shuffle"
+              className={`text-xl transition ${
+                shuffle ? 'text-green-400' : 'text-gray-400 hover:text-white'
+              }`}>
+              🔀
+            </button>
+
             <button onClick={playPrev}
               className="text-gray-400 hover:text-white text-xl transition">
               ⏮
             </button>
+
             <button onClick={togglePlay}
               className="bg-green-500 hover:bg-green-400 text-black 
                 w-10 h-10 rounded-full flex items-center justify-center 
                 text-xl transition">
               {isPlaying ? '⏸' : '▶'}
             </button>
+
             <button onClick={playNext}
               className="text-gray-400 hover:text-white text-xl transition">
               ⏭
             </button>
+
+            {/* Repeat */}
+            <button
+              onClick={cycleRepeat}
+              title={`Repeat: ${repeat}`}
+              className={`text-xl transition ${
+                repeat !== 'none' ? 'text-green-400' : 'text-gray-400 hover:text-white'
+              }`}>
+              {repeat === 'one' ? '🔂' : '🔁'}
+            </button>
+
           </div>
 
           {/* Progress Bar */}
