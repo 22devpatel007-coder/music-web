@@ -4,43 +4,14 @@ import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 
-// ── Map Firebase error codes → human-readable messages ──────────────────────
-const FIREBASE_ERRORS = {
-  'auth/invalid-email':            'The email address is badly formatted.',
-  'auth/user-disabled':            'This account has been disabled. Contact support.',
-  'auth/user-not-found':           'No account found with this email.',
-  'auth/wrong-password':           'Incorrect password. Please try again.',
-  'auth/invalid-credential':       'Email or password is incorrect.',   // Firebase v9 unified error
-  'auth/too-many-requests':        'Too many failed attempts. Try again later or reset your password.',
-  'auth/network-request-failed':   'Network error. Check your internet connection.',
-  'auth/internal-error':           'An internal error occurred. Please try again.',
-};
-
-const friendlyError = (code) =>
-  FIREBASE_ERRORS[code] ?? `Login failed (${code}). Please try again.`;
-
-// ─────────────────────────────────────────────────────────────────────────────
-
 const Login = () => {
-  const [email, setEmail]               = useState('');
-  const [password, setPassword]         = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [error, setError]               = useState('');
-  const [loading, setLoading]           = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-
-  const { signInWithGoogle, isAdmin } = useAuth();
+  const { signInWithGoogle } = useAuth();
   const navigate = useNavigate();
-
-  // After successful login decide where to send the user
-  const redirectAfterLogin = (user) => {
-    const adminEmail = process.env.REACT_APP_ADMIN_EMAIL;
-    if (adminEmail && user.email === adminEmail) {
-      navigate('/admin');
-    } else {
-      navigate('/home');
-    }
-  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -48,14 +19,16 @@ const Login = () => {
     setLoading(true);
     try {
       const result = await signInWithEmailAndPassword(auth, email, password);
-      redirectAfterLogin(result.user);
+      const adminEmail = process.env.REACT_APP_ADMIN_EMAIL;
+      if (result.user.email === adminEmail) {
+        navigate('/admin');
+      } else {
+        navigate('/home');
+      }
     } catch (err) {
-      // Show the REAL error, not a generic lie
-      console.error('Login error:', err.code, err.message);
-      setError(friendlyError(err.code));
-    } finally {
-      setLoading(false);
+      setError('Invalid email or password. Please try again.');
     }
+    setLoading(false);
   };
 
   const handleGoogleLogin = async () => {
@@ -63,125 +36,246 @@ const Login = () => {
     setGoogleLoading(true);
     try {
       const result = await signInWithGoogle();
-      redirectAfterLogin(result.user);
+      const adminEmail = process.env.REACT_APP_ADMIN_EMAIL;
+      if (result.user.email === adminEmail) {
+        navigate('/admin');
+      } else {
+        navigate('/home');
+      }
     } catch (err) {
-      console.error('Google error:', err.code, err.message);
-      const googleErrors = {
-        'auth/unauthorized-domain':   'This domain is not authorised. Add it in Firebase Console → Authentication → Settings → Authorised domains.',
-        'auth/popup-blocked':         'Popup was blocked. Please allow popups for this site.',
-        'auth/popup-closed-by-user':  'Sign-in cancelled. Please try again.',
-        'auth/cancelled-popup-request': 'Only one sign-in popup can be open at a time.',
-      };
-      setError(googleErrors[err.code] ?? friendlyError(err.code));
-    } finally {
-      setGoogleLoading(false);
+      if (err.code === 'auth/unauthorized-domain') {
+        setError('Domain not authorized. Add it in Firebase Console.');
+      } else if (err.code === 'auth/popup-blocked') {
+        setError('Popup blocked. Please allow popups for this site.');
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        setError('Sign-in cancelled.');
+      } else {
+        setError('Google sign-in failed. Please try again.');
+      }
     }
+    setGoogleLoading(false);
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4">
-      <div className="bg-gray-800 p-8 rounded-2xl w-full max-w-md shadow-xl">
-        <h1 className="text-green-500 text-3xl font-bold text-center mb-2">
-          🎵 MeloStream
-        </h1>
-        <p className="text-gray-400 text-center mb-8">Login to continue</p>
+    <div style={styles.page}>
+      <div style={styles.card}>
+        {/* Logo */}
+        <div style={styles.logoRow}>
+          <div style={styles.logoIcon}>♪</div>
+          <span style={styles.logoText}>MeloStream</span>
+        </div>
+        <p style={styles.subtitle}>Sign in to your account</p>
 
-        {/* ── Error Banner ─────────────────────────────────────────────── */}
-        {error && (
-          <div className="bg-red-500 bg-opacity-20 border border-red-500
-            border-opacity-30 text-red-400 px-4 py-3 rounded-lg mb-4 text-sm
-            flex items-start gap-2">
-            <span className="mt-0.5">⚠️</span>
-            <span>{error}</span>
-          </div>
-        )}
+        {error && <div style={styles.errorBox}>{error}</div>}
 
-        {/* ── Email / Password Form ─────────────────────────────────────── */}
-        <form onSubmit={handleLogin} className="space-y-4">
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            autoComplete="email"
-            className="w-full bg-gray-700 text-white px-4 py-3
-              rounded-lg outline-none focus:ring-2 focus:ring-green-500
-              placeholder-gray-500"
-          />
-
-          {/* Password with show/hide toggle */}
-          <div className="relative">
+        <form onSubmit={handleLogin} style={styles.form}>
+          <div style={styles.fieldGroup}>
+            <label style={styles.label}>Email</label>
             <input
-              type={showPassword ? 'text' : 'password'}
-              placeholder="Password"
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              style={styles.input}
+              onFocus={e => e.target.style.borderColor = '#22c55e'}
+              onBlur={e => e.target.style.borderColor = '#2d2d2d'}
+            />
+          </div>
+          <div style={styles.fieldGroup}>
+            <label style={styles.label}>Password</label>
+            <input
+              type="password"
+              placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              autoComplete="current-password"
-              className="w-full bg-gray-700 text-white px-4 py-3 pr-12
-                rounded-lg outline-none focus:ring-2 focus:ring-green-500
-                placeholder-gray-500"
+              style={styles.input}
+              onFocus={e => e.target.style.borderColor = '#22c55e'}
+              onBlur={e => e.target.style.borderColor = '#2d2d2d'}
             />
-            <button
-              type="button"
-              onClick={() => setShowPassword((v) => !v)}
-              className="absolute right-3 top-1/2 -translate-y-1/2
-                text-gray-400 hover:text-white text-sm select-none">
-              {showPassword ? '🙈' : '👁️'}
-            </button>
           </div>
-
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-green-500 hover:bg-green-600
-              text-black font-bold py-3 rounded-lg transition
-              disabled:opacity-50 disabled:cursor-not-allowed">
-            {loading ? 'Logging in…' : 'Login'}
+            style={{ ...styles.primaryBtn, opacity: loading ? 0.6 : 1 }}
+          >
+            {loading ? 'Signing in…' : 'Sign In'}
           </button>
         </form>
 
-        {/* ── Divider ──────────────────────────────────────────────────── */}
-        <div className="flex items-center gap-3 my-6">
-          <div className="flex-1 h-px bg-gray-600" />
-          <span className="text-gray-400 text-sm">OR</span>
-          <div className="flex-1 h-px bg-gray-600" />
+        <div style={styles.divider}>
+          <span style={styles.dividerLine} />
+          <span style={styles.dividerText}>or</span>
+          <span style={styles.dividerLine} />
         </div>
 
-        {/* ── Google Button ─────────────────────────────────────────────── */}
         <button
           onClick={handleGoogleLogin}
           disabled={googleLoading}
-          className="w-full bg-white hover:bg-gray-100 text-gray-800
-            font-semibold py-3 px-4 rounded-lg transition
-            disabled:opacity-50 disabled:cursor-not-allowed
-            flex items-center justify-center gap-3 border border-gray-200">
-          {googleLoading ? (
-            <span className="text-gray-600">Signing in…</span>
-          ) : (
-            <>
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"
-                width="20" height="20" style={{ minWidth: 20 }}>
-                <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/>
-                <path fill="#FF3D00" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/>
-                <path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/>
-                <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303c-.792 2.237-2.231 4.166-4.087 5.571l6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/>
-              </svg>
-              <span>Continue with Google</span>
-            </>
-          )}
+          style={{ ...styles.googleBtn, opacity: googleLoading ? 0.6 : 1 }}
+        >
+          <GoogleIcon />
+          {googleLoading ? 'Signing in…' : 'Continue with Google'}
         </button>
 
-        <p className="text-gray-400 text-center mt-6 text-sm">
+        <p style={styles.footerText}>
           Don't have an account?{' '}
-          <Link to="/register" className="text-green-400 hover:underline">
-            Register
-          </Link>
+          <Link to="/register" style={styles.link}>Create one</Link>
         </p>
       </div>
     </div>
   );
+};
+
+const GoogleIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="18" height="18" style={{ flexShrink: 0 }}>
+    <path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12s5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24s8.955,20,20,20s20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"/>
+    <path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/>
+    <path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/>
+    <path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z"/>
+  </svg>
+);
+
+const styles = {
+  page: {
+    minHeight: '100vh',
+    background: '#0f0f0f',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '24px 16px',
+    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+  },
+  card: {
+    background: '#1a1a1a',
+    border: '1px solid #2d2d2d',
+    borderRadius: '16px',
+    padding: '40px',
+    width: '100%',
+    maxWidth: '400px',
+  },
+  logoRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    marginBottom: '8px',
+  },
+  logoIcon: {
+    width: '36px',
+    height: '36px',
+    background: '#22c55e',
+    borderRadius: '10px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#000',
+    fontSize: '18px',
+    fontWeight: '700',
+  },
+  logoText: {
+    color: '#fff',
+    fontSize: '20px',
+    fontWeight: '700',
+    letterSpacing: '-0.3px',
+  },
+  subtitle: {
+    color: '#6b7280',
+    fontSize: '14px',
+    marginBottom: '28px',
+  },
+  errorBox: {
+    background: 'rgba(239,68,68,0.1)',
+    border: '1px solid rgba(239,68,68,0.3)',
+    color: '#f87171',
+    borderRadius: '8px',
+    padding: '12px 14px',
+    fontSize: '13px',
+    marginBottom: '20px',
+  },
+  form: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px',
+  },
+  fieldGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+  },
+  label: {
+    color: '#9ca3af',
+    fontSize: '13px',
+    fontWeight: '500',
+  },
+  input: {
+    background: '#111',
+    border: '1px solid #2d2d2d',
+    borderRadius: '8px',
+    padding: '11px 14px',
+    color: '#fff',
+    fontSize: '14px',
+    outline: 'none',
+    transition: 'border-color 0.2s',
+    width: '100%',
+    boxSizing: 'border-box',
+  },
+  primaryBtn: {
+    background: '#22c55e',
+    color: '#000',
+    border: 'none',
+    borderRadius: '8px',
+    padding: '12px',
+    fontWeight: '600',
+    fontSize: '14px',
+    cursor: 'pointer',
+    transition: 'background 0.2s',
+    marginTop: '4px',
+  },
+  divider: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    margin: '24px 0',
+  },
+  dividerLine: {
+    flex: 1,
+    height: '1px',
+    background: '#2d2d2d',
+  },
+  dividerText: {
+    color: '#4b5563',
+    fontSize: '12px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+  },
+  googleBtn: {
+    background: '#fff',
+    color: '#111',
+    border: 'none',
+    borderRadius: '8px',
+    padding: '11px 14px',
+    fontWeight: '600',
+    fontSize: '14px',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '10px',
+    width: '100%',
+    transition: 'background 0.2s',
+  },
+  footerText: {
+    color: '#6b7280',
+    fontSize: '13px',
+    textAlign: 'center',
+    marginTop: '24px',
+  },
+  link: {
+    color: '#22c55e',
+    textDecoration: 'none',
+    fontWeight: '500',
+  },
 };
 
 export default Login;

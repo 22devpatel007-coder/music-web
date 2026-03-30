@@ -4,9 +4,7 @@ import axiosInstance from '../utils/axiosInstance';
 import Navbar from '../components/Navbar';
 
 const UploadMusic = () => {
-  const [form, setForm] = useState({
-    title: '', artist: '', genre: '', duration: ''
-  });
+  const [form, setForm] = useState({ title: '', artist: '', genre: '', duration: '' });
   const [songFile, setSongFile] = useState(null);
   const [coverFile, setCoverFile] = useState(null);
   const [progress, setProgress] = useState(0);
@@ -15,32 +13,27 @@ const UploadMusic = () => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
-  };
+  const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setSuccess('');
-
-    if (!songFile) return setError('Please select an MP3 file');
-    if (!coverFile) return setError('Please select a cover image');
-
+    if (!songFile) return setError('Please select an MP3 file.');
+    if (!coverFile) return setError('Please select a cover image.');
     setLoading(true);
     try {
-      const formData = new FormData();
-      formData.append('title', form.title);
-      formData.append('artist', form.artist);
-      formData.append('genre', form.genre);
-      formData.append('duration', form.duration);
-      formData.append('song', songFile);
-      formData.append('cover', coverFile);
+      const fd = new FormData();
+      fd.append('title', form.title);
+      fd.append('artist', form.artist);
+      fd.append('genre', form.genre);
+      fd.append('duration', form.duration);
+      fd.append('song', songFile);
+      fd.append('cover', coverFile);
 
-      await axiosInstance.post('/api/songs', formData, {
+      await axiosInstance.post('/api/songs', fd, {
         onUploadProgress: (e) => {
-          const percent = Math.round((e.loaded * 100) / e.total);
-          setProgress(percent);
+          setProgress(Math.round((e.loaded * 100) / e.total));
         },
       });
 
@@ -50,132 +43,252 @@ const UploadMusic = () => {
       setSongFile(null);
       setCoverFile(null);
       setTimeout(() => navigate('/admin/songs'), 1500);
-
     } catch (err) {
-      console.error('Upload error:', err);
-      setError(err.response?.data?.error || err.message || 'Upload failed');
+      setError(err.response?.data?.error || err.message || 'Upload failed. Please try again.');
     }
     setLoading(false);
   };
 
   return (
-    <div className="min-h-screen bg-gray-900">
+    <div style={styles.page}>
       <Navbar />
-      <div className="max-w-xl mx-auto px-6 py-8">
-        <h1 className="text-white text-3xl font-bold mb-8">
-          Upload Song
-        </h1>
+      <div style={styles.container}>
+        <div style={styles.pageHeader}>
+          <h1 style={styles.heading}>Upload Song</h1>
+          <p style={styles.subheading}>Add a new track to your library</p>
+        </div>
 
-        {error && (
-          <div className="bg-red-500 bg-opacity-20 text-red-400 
-            px-4 py-3 rounded-lg mb-4 text-sm">{error}</div>
-        )}
-        {success && (
-          <div className="bg-green-500 bg-opacity-20 text-green-400 
-            px-4 py-3 rounded-lg mb-4 text-sm">{success}</div>
-        )}
+        <div style={styles.card}>
+          {error && <div style={styles.errorBox}>{error}</div>}
+          {success && <div style={styles.successBox}>{success}</div>}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <input
-            name="title"
-            placeholder="Song Title"
-            value={form.title}
-            onChange={handleChange}
-            required
-            className="w-full bg-gray-800 text-white px-4 py-3 
-              rounded-lg outline-none focus:ring-2 focus:ring-green-500
-              placeholder-gray-500"
-          />
-          <input
-            name="artist"
-            placeholder="Artist Name"
-            value={form.artist}
-            onChange={handleChange}
-            required
-            className="w-full bg-gray-800 text-white px-4 py-3 
-              rounded-lg outline-none focus:ring-2 focus:ring-green-500
-              placeholder-gray-500"
-          />
-          <input
-            name="genre"
-            placeholder="Genre (Pop, Rock, etc.)"
-            value={form.genre}
-            onChange={handleChange}
-            required
-            className="w-full bg-gray-800 text-white px-4 py-3 
-              rounded-lg outline-none focus:ring-2 focus:ring-green-500
-              placeholder-gray-500"
-          />
-          <input
-            name="duration"
-            type="number"
-            placeholder="Duration (in seconds)"
-            value={form.duration}
-            onChange={handleChange}
-            required
-            className="w-full bg-gray-800 text-white px-4 py-3 
-              rounded-lg outline-none focus:ring-2 focus:ring-green-500
-              placeholder-gray-500"
-          />
-
-          {/* MP3 Upload */}
-          <div className="bg-gray-800 rounded-lg p-4">
-            <label className="text-gray-400 text-sm block mb-2">
-              MP3 File (max 10MB)
-            </label>
-            <input
-              type="file"
-              accept=".mp3,audio/mpeg"
-              onChange={(e) => setSongFile(e.target.files[0])}
-              className="text-white w-full"
-            />
-            {songFile && (
-              <p className="text-green-400 text-xs mt-1">
-                ✅ {songFile.name}
-              </p>
-            )}
-          </div>
-
-          {/* Cover Image Upload */}
-          <div className="bg-gray-800 rounded-lg p-4">
-            <label className="text-gray-400 text-sm block mb-2">
-              Cover Image
-            </label>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => setCoverFile(e.target.files[0])}
-              className="text-white w-full"
-            />
-            {coverFile && (
-              <p className="text-green-400 text-xs mt-1">
-                ✅ {coverFile.name}
-              </p>
-            )}
-          </div>
-
-          {/* Progress Bar */}
-          {progress > 0 && (
-            <div className="w-full bg-gray-700 rounded-full h-2">
-              <div
-                className="bg-green-500 h-2 rounded-full transition-all"
-                style={{ width: `${progress}%` }}
-              />
+          <form onSubmit={handleSubmit} style={styles.form}>
+            <div style={styles.row}>
+              <Field label="Song Title" name="title" placeholder="e.g. Blinding Lights" value={form.title} onChange={handleChange} required />
+              <Field label="Artist Name" name="artist" placeholder="e.g. The Weeknd" value={form.artist} onChange={handleChange} required />
             </div>
-          )}
+            <div style={styles.row}>
+              <Field label="Genre" name="genre" placeholder="Pop, Rock, Hip-Hop…" value={form.genre} onChange={handleChange} required />
+              <Field label="Duration (seconds)" name="duration" type="number" placeholder="e.g. 214" value={form.duration} onChange={handleChange} required />
+            </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-green-500 hover:bg-green-600 
-              text-black font-bold py-3 rounded-lg transition
-              disabled:opacity-50">
-            {loading ? `Uploading... ${progress}%` : 'Upload Song'}
-          </button>
-        </form>
+            {/* MP3 */}
+            <FileField
+              label="MP3 File"
+              hint="Max 10 MB · .mp3 only"
+              accept=".mp3,audio/mpeg"
+              file={songFile}
+              onChange={(e) => setSongFile(e.target.files[0])}
+            />
+
+            {/* Cover */}
+            <FileField
+              label="Cover Image"
+              hint="JPG, PNG, WEBP"
+              accept="image/*"
+              file={coverFile}
+              onChange={(e) => setCoverFile(e.target.files[0])}
+            />
+
+            {/* Progress */}
+            {progress > 0 && (
+              <div style={styles.progressWrap}>
+                <div style={styles.progressBar}>
+                  <div style={{ ...styles.progressFill, width: `${progress}%` }} />
+                </div>
+                <span style={styles.progressLabel}>{progress}%</span>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              style={{ ...styles.submitBtn, opacity: loading ? 0.6 : 1 }}
+            >
+              {loading ? `Uploading… ${progress}%` : 'Upload Song'}
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   );
+};
+
+const Field = ({ label, name, type = 'text', placeholder, value, onChange, required }) => {
+  const [focused, setFocused] = useState(false);
+  return (
+    <div style={styles.fieldGroup}>
+      <label style={styles.label}>{label}</label>
+      <input
+        type={type}
+        name={name}
+        placeholder={placeholder}
+        value={value}
+        onChange={onChange}
+        required={required}
+        style={{ ...styles.input, borderColor: focused ? '#22c55e' : '#2d2d2d' }}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+      />
+    </div>
+  );
+};
+
+const FileField = ({ label, hint, accept, file, onChange }) => (
+  <div style={styles.fileField}>
+    <div style={styles.fileTop}>
+      <label style={styles.label}>{label}</label>
+      <span style={styles.fileHint}>{hint}</span>
+    </div>
+    <label style={styles.fileLabel}>
+      <input type="file" accept={accept} onChange={onChange} style={{ display: 'none' }} />
+      <span style={styles.fileBrowse}>Browse file</span>
+      <span style={styles.fileName}>
+        {file ? `✓  ${file.name}` : 'No file selected'}
+      </span>
+    </label>
+  </div>
+);
+
+const styles = {
+  page: {
+    minHeight: '100vh',
+    background: '#0f0f0f',
+    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+  },
+  container: {
+    maxWidth: '680px',
+    margin: '0 auto',
+    padding: '32px 20px 80px',
+  },
+  pageHeader: { marginBottom: '24px' },
+  heading: {
+    color: '#fff',
+    fontSize: '22px',
+    fontWeight: '700',
+    letterSpacing: '-0.3px',
+    marginBottom: '4px',
+  },
+  subheading: { color: '#6b7280', fontSize: '13px' },
+  card: {
+    background: '#1a1a1a',
+    border: '1px solid #2d2d2d',
+    borderRadius: '14px',
+    padding: '28px',
+  },
+  errorBox: {
+    background: 'rgba(239,68,68,0.1)',
+    border: '1px solid rgba(239,68,68,0.3)',
+    color: '#f87171',
+    borderRadius: '8px',
+    padding: '12px 14px',
+    fontSize: '13px',
+    marginBottom: '20px',
+  },
+  successBox: {
+    background: 'rgba(34,197,94,0.1)',
+    border: '1px solid rgba(34,197,94,0.3)',
+    color: '#4ade80',
+    borderRadius: '8px',
+    padding: '12px 14px',
+    fontSize: '13px',
+    marginBottom: '20px',
+  },
+  form: { display: 'flex', flexDirection: 'column', gap: '18px' },
+  row: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gap: '14px',
+  },
+  fieldGroup: { display: 'flex', flexDirection: 'column', gap: '6px' },
+  label: { color: '#9ca3af', fontSize: '12px', fontWeight: '500' },
+  input: {
+    background: '#111',
+    border: '1px solid #2d2d2d',
+    borderRadius: '8px',
+    padding: '10px 12px',
+    color: '#fff',
+    fontSize: '14px',
+    outline: 'none',
+    transition: 'border-color 0.2s',
+    width: '100%',
+    boxSizing: 'border-box',
+    fontFamily: 'inherit',
+  },
+  fileField: {
+    background: '#111',
+    border: '1px solid #2d2d2d',
+    borderRadius: '8px',
+    padding: '14px',
+  },
+  fileTop: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '10px',
+  },
+  fileHint: { color: '#4b5563', fontSize: '11px' },
+  fileLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    cursor: 'pointer',
+  },
+  fileBrowse: {
+    background: '#2d2d2d',
+    color: '#e5e7eb',
+    borderRadius: '6px',
+    padding: '6px 14px',
+    fontSize: '12px',
+    fontWeight: '500',
+    flexShrink: 0,
+    transition: 'background 0.2s',
+  },
+  fileName: {
+    color: '#6b7280',
+    fontSize: '12px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  progressWrap: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+  },
+  progressBar: {
+    flex: 1,
+    height: '4px',
+    background: '#2d2d2d',
+    borderRadius: '2px',
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    background: '#22c55e',
+    borderRadius: '2px',
+    transition: 'width 0.2s',
+  },
+  progressLabel: {
+    color: '#22c55e',
+    fontSize: '12px',
+    fontWeight: '600',
+    minWidth: '34px',
+    textAlign: 'right',
+  },
+  submitBtn: {
+    background: '#22c55e',
+    color: '#000',
+    border: 'none',
+    borderRadius: '8px',
+    padding: '12px',
+    fontWeight: '700',
+    fontSize: '14px',
+    cursor: 'pointer',
+    marginTop: '4px',
+    fontFamily: 'inherit',
+    transition: 'background 0.2s',
+  },
 };
 
 export default UploadMusic;

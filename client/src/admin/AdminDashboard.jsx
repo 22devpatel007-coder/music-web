@@ -1,253 +1,75 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import axiosInstance from '../utils/axiosInstance';
 import Navbar from '../components/Navbar';
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  LineChart, Line, CartesianGrid,
-} from 'recharts';
 
-/* ─── helpers ───────────────────────────────────────────────────────────────── */
-const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun',
-                'Jul','Aug','Sep','Oct','Nov','Dec'];
-
-const monthKey = (ts) => {
-  if (!ts) return null;
-  const d = ts?.toDate ? ts.toDate() : new Date(ts);
-  return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
-};
-
-const CustomTooltip = ({ active, payload, label }) => {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
-      <p className="text-gray-400 mb-1">{label}</p>
-      {payload.map((p, i) => (
-        <p key={i} style={{ color: p.color }} className="font-semibold">
-          {p.name}: {p.value}
-        </p>
-      ))}
-    </div>
-  );
-};
-
-/* ─── component ─────────────────────────────────────────────────────────────── */
 const AdminDashboard = () => {
-  const [songs, setSongs]   = useState([]);
-  const [users, setUsers]   = useState([]);
+  const [stats, setStats] = useState({ songs: 0, users: 0 });
+  const [recentSongs, setRecentSongs] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchAll = async () => {
+    const fetchStats = async () => {
       try {
-        const [sRes, uRes] = await Promise.all([
+        const [songsRes, usersRes] = await Promise.all([
           axiosInstance.get('/api/songs'),
           axiosInstance.get('/api/users'),
         ]);
-        setSongs(sRes.data);
-        setUsers(uRes.data);
+        setStats({ songs: songsRes.data.length, users: usersRes.data.length });
+        setRecentSongs(songsRes.data.slice(0, 6));
       } catch (err) {
-        console.error('Dashboard fetch failed:', err);
+        console.error('Failed to fetch stats:', err);
       }
       setLoading(false);
     };
-    fetchAll();
+    fetchStats();
   }, []);
 
-  /* top songs by playCount */
-  const topSongs = useMemo(() =>
-    [...songs]
-      .sort((a, b) => (b.playCount || 0) - (a.playCount || 0))
-      .slice(0, 8)
-      .map(s => ({ name: s.title.length > 14 ? s.title.slice(0, 14) + '…' : s.title, plays: s.playCount || 0 })),
-    [songs]
-  );
-
-  /* uploads per month */
-  const uploadsPerMonth = useMemo(() => {
-    const map = {};
-    songs.forEach(s => {
-      const k = monthKey(s.createdAt);
-      if (k) map[k] = (map[k] || 0) + 1;
-    });
-    return Object.entries(map)
-      .map(([month, count]) => ({ month, count }))
-      .slice(-6);
-  }, [songs]);
-
-  /* users per month */
-  const usersPerMonth = useMemo(() => {
-    const map = {};
-    users.forEach(u => {
-      const k = monthKey(u.createdAt);
-      if (k) map[k] = (map[k] || 0) + 1;
-    });
-    return Object.entries(map)
-      .map(([month, count]) => ({ month, count }))
-      .slice(-6);
-  }, [users]);
-
-  /* genre breakdown */
-  const genreBreakdown = useMemo(() => {
-    const map = {};
-    songs.forEach(s => {
-      if (s.genre) map[s.genre] = (map[s.genre] || 0) + 1;
-    });
-    return Object.entries(map)
-      .sort((a, b) => b[1] - a[1])
-      .map(([genre, count]) => ({ genre, count }));
-  }, [songs]);
-
-  const recentSongs = songs.slice(0, 5);
-
   return (
-    <div className="min-h-screen bg-gray-900">
+    <div style={styles.page}>
       <Navbar />
-      <div className="max-w-7xl mx-auto px-6 py-8">
-        <h1 className="text-white text-3xl font-bold mb-8">Admin Dashboard</h1>
+      <div style={styles.container}>
+        <div style={styles.pageHeader}>
+          <h1 style={styles.heading}>Dashboard</h1>
+          <p style={styles.subheading}>Overview of your MeloStream platform</p>
+        </div>
 
         {/* Stat Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-          {[
-            { label: 'Total Songs',  value: songs.length,  icon: '🎵', color: 'text-green-400' },
-            { label: 'Total Users',  value: users.length,  icon: '👥', color: 'text-blue-400'  },
-            { label: 'Total Plays',  value: songs.reduce((a, s) => a + (s.playCount || 0), 0), icon: '▶️', color: 'text-purple-400' },
-            { label: 'Genres',       value: new Set(songs.map(s => s.genre).filter(Boolean)).size, icon: '🏷️', color: 'text-yellow-400' },
-          ].map(card => (
-            <div key={card.label} className="bg-gray-800 rounded-2xl p-5">
-              <p className="text-gray-400 text-xs mb-1">{card.icon} {card.label}</p>
-              <p className={`${card.color} text-3xl font-bold`}>
-                {loading ? '—' : card.value.toLocaleString()}
-              </p>
-            </div>
-          ))}
+        <div style={styles.statsRow}>
+          <StatCard label="Total Songs" value={loading ? '…' : stats.songs} icon="🎵" />
+          <StatCard label="Registered Users" value={loading ? '…' : stats.users} icon="👤" />
         </div>
 
-        {/* Action links */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
-          <Link to="/admin/upload"
-            className="bg-green-500 hover:bg-green-600 text-black
-              font-bold py-4 rounded-xl text-center transition">
-            ⬆️ Upload Song
-          </Link>
-          <Link to="/admin/songs"
-            className="bg-gray-800 hover:bg-gray-700 text-white
-              font-bold py-4 rounded-xl text-center transition">
-            🎵 Manage Songs
-          </Link>
-          <Link to="/admin/users"
-            className="bg-gray-800 hover:bg-gray-700 text-white
-              font-bold py-4 rounded-xl text-center transition">
-            👥 View Users
-          </Link>
-        </div>
-
-        {/* Charts Row 1 */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          {/* Top songs by plays */}
-          <div className="bg-gray-800 rounded-2xl p-5">
-            <h2 className="text-white font-bold mb-4 text-sm">📊 Top Songs by Plays</h2>
-            {loading || topSongs.length === 0 ? (
-              <div className="text-gray-500 text-sm text-center py-8">No play data yet</div>
-            ) : (
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={topSongs} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                  <XAxis dataKey="name" tick={{ fill: '#9CA3AF', fontSize: 10 }} />
-                  <YAxis tick={{ fill: '#9CA3AF', fontSize: 10 }} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Bar dataKey="plays" fill="#22C55E" radius={[4, 4, 0, 0]} name="Plays" />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-
-          {/* Genre breakdown */}
-          <div className="bg-gray-800 rounded-2xl p-5">
-            <h2 className="text-white font-bold mb-4 text-sm">🏷️ Songs by Genre</h2>
-            {loading || genreBreakdown.length === 0 ? (
-              <div className="text-gray-500 text-sm text-center py-8">No genre data yet</div>
-            ) : (
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={genreBreakdown} layout="vertical"
-                  margin={{ top: 0, right: 10, left: 20, bottom: 0 }}>
-                  <XAxis type="number" tick={{ fill: '#9CA3AF', fontSize: 10 }} />
-                  <YAxis dataKey="genre" type="category" tick={{ fill: '#9CA3AF', fontSize: 11 }} width={60} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Bar dataKey="count" fill="#818CF8" radius={[0, 4, 4, 0]} name="Songs" />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </div>
-
-        {/* Charts Row 2 */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          {/* Uploads per month */}
-          <div className="bg-gray-800 rounded-2xl p-5">
-            <h2 className="text-white font-bold mb-4 text-sm">📈 Uploads per Month</h2>
-            {loading || uploadsPerMonth.length === 0 ? (
-              <div className="text-gray-500 text-sm text-center py-8">No data yet</div>
-            ) : (
-              <ResponsiveContainer width="100%" height={200}>
-                <LineChart data={uploadsPerMonth}
-                  margin={{ top: 0, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="month" tick={{ fill: '#9CA3AF', fontSize: 10 }} />
-                  <YAxis tick={{ fill: '#9CA3AF', fontSize: 10 }} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Line type="monotone" dataKey="count" stroke="#22C55E"
-                    strokeWidth={2} dot={{ fill: '#22C55E', r: 4 }} name="Uploads" />
-                </LineChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-
-          {/* Users over time */}
-          <div className="bg-gray-800 rounded-2xl p-5">
-            <h2 className="text-white font-bold mb-4 text-sm">👥 New Users per Month</h2>
-            {loading || usersPerMonth.length === 0 ? (
-              <div className="text-gray-500 text-sm text-center py-8">No data yet</div>
-            ) : (
-              <ResponsiveContainer width="100%" height={200}>
-                <LineChart data={usersPerMonth}
-                  margin={{ top: 0, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="month" tick={{ fill: '#9CA3AF', fontSize: 10 }} />
-                  <YAxis tick={{ fill: '#9CA3AF', fontSize: 10 }} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Line type="monotone" dataKey="count" stroke="#60A5FA"
-                    strokeWidth={2} dot={{ fill: '#60A5FA', r: 4 }} name="Users" />
-                </LineChart>
-              </ResponsiveContainer>
-            )}
+        {/* Quick Links */}
+        <div style={styles.section}>
+          <h2 style={styles.sectionTitle}>Quick Actions</h2>
+          <div style={styles.actionsRow}>
+            <ActionLink to="/admin/upload" primary label="Upload Song" desc="Add new music" icon="↑" />
+            <ActionLink to="/admin/songs" label="Manage Songs" desc="View & delete tracks" icon="♪" />
+            <ActionLink to="/admin/users" label="View Users" desc="All registered accounts" icon="◎" />
           </div>
         </div>
 
         {/* Recent uploads */}
-        <div className="bg-gray-800 rounded-2xl p-6">
-          <h2 className="text-white text-lg font-bold mb-4">🕐 Recent Uploads</h2>
+        <div style={styles.section}>
+          <h2 style={styles.sectionTitle}>Recent Uploads</h2>
           {recentSongs.length === 0 ? (
-            <p className="text-gray-400 text-sm">No songs uploaded yet</p>
+            <p style={styles.empty}>No songs uploaded yet.</p>
           ) : (
-            <div className="space-y-3">
+            <div style={styles.recentList}>
               {recentSongs.map(song => (
-                <div key={song.id}
-                  className="flex items-center gap-4 border-b border-gray-700 pb-3">
-                  <img src={song.coverUrl} alt={song.title}
-                    className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white font-semibold truncate">{song.title}</p>
-                    <p className="text-gray-400 text-sm">{song.artist}</p>
+                <div key={song.id} style={styles.recentItem}>
+                  <img
+                    src={song.coverUrl}
+                    alt={song.title}
+                    style={styles.recentCover}
+                    onError={e => { e.target.src = 'https://placehold.co/48x48/111/555?text=♪'; }}
+                  />
+                  <div style={styles.recentInfo}>
+                    <p style={styles.recentTitle}>{song.title}</p>
+                    <p style={styles.recentArtist}>{song.artist}</p>
                   </div>
-                  <div className="text-right flex-shrink-0">
-                    <span className="text-green-500 text-xs bg-green-500
-                      bg-opacity-20 px-2 py-1 rounded-full block mb-1">
-                      {song.genre}
-                    </span>
-                    <span className="text-gray-500 text-xs">
-                      ▶ {(song.playCount || 0).toLocaleString()}
-                    </span>
-                  </div>
+                  <span style={styles.recentGenre}>{song.genre}</span>
                 </div>
               ))}
             </div>
@@ -256,6 +78,174 @@ const AdminDashboard = () => {
       </div>
     </div>
   );
+};
+
+const StatCard = ({ label, value, icon }) => (
+  <div style={styles.statCard}>
+    <div style={styles.statIconWrap}>{icon}</div>
+    <div>
+      <p style={styles.statValue}>{value}</p>
+      <p style={styles.statLabel}>{label}</p>
+    </div>
+  </div>
+);
+
+const ActionLink = ({ to, label, desc, icon, primary }) => (
+  <Link to={to} style={{ ...styles.actionCard, ...(primary ? styles.actionCardPrimary : {}) }}>
+    <div style={{ ...styles.actionIcon, ...(primary ? styles.actionIconPrimary : {}) }}>{icon}</div>
+    <div>
+      <p style={{ ...styles.actionLabel, ...(primary ? styles.actionLabelPrimary : {}) }}>{label}</p>
+      <p style={styles.actionDesc}>{desc}</p>
+    </div>
+  </Link>
+);
+
+const styles = {
+  page: {
+    minHeight: '100vh',
+    background: '#0f0f0f',
+    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+  },
+  container: {
+    maxWidth: '1000px',
+    margin: '0 auto',
+    padding: '32px 20px 80px',
+  },
+  pageHeader: { marginBottom: '28px' },
+  heading: {
+    color: '#fff',
+    fontSize: '22px',
+    fontWeight: '700',
+    letterSpacing: '-0.3px',
+    marginBottom: '4px',
+  },
+  subheading: { color: '#6b7280', fontSize: '13px' },
+
+  statsRow: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+    gap: '14px',
+    marginBottom: '32px',
+  },
+  statCard: {
+    background: '#1a1a1a',
+    border: '1px solid #2d2d2d',
+    borderRadius: '12px',
+    padding: '20px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '14px',
+  },
+  statIconWrap: {
+    width: '44px',
+    height: '44px',
+    background: 'rgba(34,197,94,0.1)',
+    borderRadius: '10px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '18px',
+    flexShrink: 0,
+  },
+  statValue: {
+    color: '#22c55e',
+    fontSize: '28px',
+    fontWeight: '800',
+    letterSpacing: '-1px',
+    lineHeight: 1,
+    marginBottom: '4px',
+  },
+  statLabel: { color: '#6b7280', fontSize: '12px' },
+
+  section: { marginBottom: '32px' },
+  sectionTitle: {
+    color: '#9ca3af',
+    fontSize: '12px',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: '0.8px',
+    marginBottom: '14px',
+  },
+
+  actionsRow: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+    gap: '12px',
+  },
+  actionCard: {
+    background: '#1a1a1a',
+    border: '1px solid #2d2d2d',
+    borderRadius: '12px',
+    padding: '18px',
+    textDecoration: 'none',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    transition: 'border-color 0.2s',
+  },
+  actionCardPrimary: {
+    background: 'rgba(34,197,94,0.08)',
+    borderColor: 'rgba(34,197,94,0.3)',
+  },
+  actionIcon: {
+    width: '34px',
+    height: '34px',
+    background: '#2d2d2d',
+    borderRadius: '8px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '15px',
+    color: '#9ca3af',
+    fontWeight: '700',
+  },
+  actionIconPrimary: { background: '#22c55e', color: '#000' },
+  actionLabel: { color: '#fff', fontSize: '14px', fontWeight: '600', marginBottom: '2px' },
+  actionLabelPrimary: { color: '#22c55e' },
+  actionDesc: { color: '#6b7280', fontSize: '12px' },
+
+  recentList: {
+    background: '#1a1a1a',
+    border: '1px solid #2d2d2d',
+    borderRadius: '12px',
+    overflow: 'hidden',
+  },
+  recentItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '12px 16px',
+    borderBottom: '1px solid #2d2d2d',
+  },
+  recentCover: {
+    width: '40px',
+    height: '40px',
+    borderRadius: '7px',
+    objectFit: 'cover',
+    background: '#111',
+    flexShrink: 0,
+  },
+  recentInfo: { flex: 1, minWidth: 0 },
+  recentTitle: {
+    color: '#fff',
+    fontSize: '13px',
+    fontWeight: '600',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  recentArtist: { color: '#6b7280', fontSize: '11px' },
+  recentGenre: {
+    background: 'rgba(34,197,94,0.1)',
+    color: '#22c55e',
+    border: '1px solid rgba(34,197,94,0.2)',
+    borderRadius: '4px',
+    padding: '2px 8px',
+    fontSize: '11px',
+    fontWeight: '500',
+    flexShrink: 0,
+  },
+  empty: { color: '#6b7280', fontSize: '14px' },
 };
 
 export default AdminDashboard;
