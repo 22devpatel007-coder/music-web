@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import axiosInstance from '../utils/axiosInstance';
 import { useAuth } from '../context/AuthContext';
 import Navbar from '../components/Navbar';
 import SongList from '../components/SongList';
 import Loader from '../components/Loader';
-import { Link } from 'react-router-dom';
 
 const LikedSongs = () => {
   const { likedSongs } = useAuth();
-  const [songs, setSongs]   = useState([]);
+  const [songs, setSongs] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -19,7 +19,6 @@ const LikedSongs = () => {
         return;
       }
       try {
-        // Fetch all songs then filter by liked IDs (avoids needing a bulk-get endpoint)
         const res = await axiosInstance.get('/api/songs');
         const liked = res.data.filter(s => likedSongs.includes(s.id));
         setSongs(liked);
@@ -34,45 +33,178 @@ const LikedSongs = () => {
   if (loading) return <Loader />;
 
   return (
-    <div className="min-h-screen bg-gray-900 pb-32">
+    <div style={styles.page}>
       <Navbar />
-      <div className="max-w-7xl mx-auto px-6 py-8">
-        <div className="flex items-center gap-3 mb-8">
-          {/* Gradient heart header */}
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-red-500 to-pink-600
-            flex items-center justify-center shadow-xl shadow-red-500/30 flex-shrink-0">
-            <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
-            </svg>
+      <div style={styles.container}>
+
+        {/* Page header */}
+        <div style={styles.header}>
+          {/* Professional heart logo mark — SVG only, no emoji */}
+          <div style={styles.iconWrap}>
+            <HeartIcon />
           </div>
           <div>
-            <h1 className="text-white text-3xl font-bold">Liked Songs</h1>
-            <p className="text-gray-400 text-sm mt-1">
-              {songs.length} {songs.length === 1 ? 'song' : 'songs'}
+            <h1 style={styles.heading}>Liked Songs</h1>
+            <p style={styles.subheading}>
+              {songs.length} {songs.length === 1 ? 'song' : 'songs'} saved
             </p>
           </div>
         </div>
 
+        {/* Divider */}
+        <div style={styles.divider} />
+
+        {/* Empty state */}
         {songs.length === 0 ? (
-          <div className="text-center py-20">
-            <div className="text-6xl mb-4">💔</div>
-            <p className="text-gray-400 text-lg mb-4">No liked songs yet</p>
-            <p className="text-gray-500 text-sm mb-6">
-              Tap the ❤️ on any song to add it here
+          <div style={styles.empty}>
+            <div style={styles.emptyIconWrap}>
+              <HeartOutlineIcon />
+            </div>
+            <p style={styles.emptyTitle}>No liked songs yet</p>
+            <p style={styles.emptySubtitle}>
+              Like a song to save it here for quick access.
             </p>
-            <Link
-              to="/home"
-              className="bg-green-500 hover:bg-green-600 text-black
-                font-bold px-6 py-3 rounded-full transition inline-block">
-              Browse Songs
+            <Link to="/home" style={styles.browseBtn}>
+              Browse Library
             </Link>
           </div>
         ) : (
           <SongList songs={songs} />
         )}
       </div>
+
+      {/* Player padding */}
+      <div style={{ height: 88 }} />
     </div>
   );
+};
+
+/* ─── Icons ─── */
+
+const HeartIcon = () => (
+  <svg
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    aria-hidden="true"
+  >
+    {/* Solid filled heart — clean geometric form */}
+    <path
+      d="M12 21C12 21 3 14.5 3 8.5C3 5.42 5.42 3 8.5 3C10.24 3 11.91 3.81 13 5.09C14.09 3.81 15.76 3 17.5 3C20.58 3 23 5.42 23 8.5C23 14.5 14 21 12 21Z"
+      fill="#fff"
+    />
+  </svg>
+);
+
+const HeartOutlineIcon = () => (
+  <svg
+    width="28"
+    height="28"
+    viewBox="0 0 24 24"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    aria-hidden="true"
+  >
+    <path
+      d="M12 21C12 21 3 14.5 3 8.5C3 5.42 5.42 3 8.5 3C10.24 3 11.91 3.81 13 5.09C14.09 3.81 15.76 3 17.5 3C20.58 3 23 5.42 23 8.5C23 14.5 14 21 12 21Z"
+      stroke="#4b5563"
+      strokeWidth="1.5"
+      strokeLinejoin="round"
+      fill="none"
+    />
+  </svg>
+);
+
+/* ─── Styles ─── */
+
+const styles = {
+  page: {
+    minHeight: '100vh',
+    background: '#0f0f0f',
+    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+  },
+  container: {
+    maxWidth: '1200px',
+    margin: '0 auto',
+    padding: '36px 20px 0',
+  },
+  header: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    marginBottom: '24px',
+  },
+  iconWrap: {
+    width: '52px',
+    height: '52px',
+    background: '#e11d48',         // rose-600 — rich, intentional
+    borderRadius: '14px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  heading: {
+    color: '#fff',
+    fontSize: '22px',
+    fontWeight: '700',
+    letterSpacing: '-0.3px',
+    marginBottom: '4px',
+  },
+  subheading: {
+    color: '#6b7280',
+    fontSize: '13px',
+  },
+
+  divider: {
+    height: '1px',
+    background: '#2d2d2d',
+    marginBottom: '28px',
+  },
+
+  /* Empty state */
+  empty: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    textAlign: 'center',
+    padding: '72px 20px',
+    gap: '12px',
+  },
+  emptyIconWrap: {
+    width: '60px',
+    height: '60px',
+    background: '#1a1a1a',
+    border: '1px solid #2d2d2d',
+    borderRadius: '16px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: '4px',
+  },
+  emptyTitle: {
+    color: '#fff',
+    fontSize: '16px',
+    fontWeight: '600',
+  },
+  emptySubtitle: {
+    color: '#6b7280',
+    fontSize: '13px',
+    maxWidth: '260px',
+  },
+  browseBtn: {
+    display: 'inline-block',
+    marginTop: '8px',
+    background: '#22c55e',
+    color: '#000',
+    textDecoration: 'none',
+    borderRadius: '8px',
+    padding: '10px 24px',
+    fontSize: '13px',
+    fontWeight: '600',
+  },
 };
 
 export default LikedSongs;
