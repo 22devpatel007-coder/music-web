@@ -1,6 +1,10 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import {
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+} from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey:            process.env.REACT_APP_FIREBASE_API_KEY,
@@ -13,8 +17,17 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
+// FIX: Use initializeFirestore with persistentLocalCache instead of getFirestore().
+// This enables IndexedDB offline persistence — returning users get Firestore
+// data from cache in <50ms instead of waiting for a network round-trip.
+// persistentMultipleTabManager allows multiple tabs to share the same cache.
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager(),
+  }),
+});
+
 export const auth = getAuth(app);
-export const db   = getFirestore(app);
 
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.addScope('email');
