@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { PlayerProvider } from './context/PlayerContext';
 
@@ -26,8 +26,10 @@ function App() {
       <AuthProvider>
         <PlayerProvider>
           <Routes>
+            {/* Root: redirect to login */}
+            <Route path="/" element={<Navigate to="/login" replace />} />
+
             {/* Public */}
-            <Route path="/"         element={<Login />} />
             <Route path="/login"    element={<Login />} />
             <Route path="/register" element={<Register />} />
 
@@ -59,8 +61,8 @@ function App() {
               <AdminRoute><UsersList /></AdminRoute>
             } />
 
-            {/* 404 */}
-            <Route path="/not-found" element={<NotFound />} />
+            {/* FIX: catch-all — was /not-found with no wildcard, so unknown URLs rendered nothing */}
+            <Route path="*" element={<NotFound />} />
           </Routes>
           <MusicPlayer />
         </PlayerProvider>

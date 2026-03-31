@@ -10,8 +10,6 @@ import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);
 
-// How often to proactively refresh the token in the background (every 55 minutes).
-// Firebase tokens expire after 60 minutes — this keeps them always fresh.
 const REFRESH_INTERVAL_MS = 55 * 60 * 1000;
 
 export const AuthProvider = ({ children }) => {
@@ -20,23 +18,14 @@ export const AuthProvider = ({ children }) => {
   const [isAdmin, setIsAdmin]         = useState(false);
   const [likedSongs, setLikedSongs]   = useState([]);
 
-  // Ref to the background refresh timer so we can clear it on logout
   const refreshTimerRef = useRef(null);
 
-  // ─── Background token refresh ───────────────────────────────────────────────
-  // Silently forces a token refresh every 55 minutes while the user is logged in.
-  // This ensures the token in Firebase's local cache is never stale.
   const startTokenRefreshTimer = useCallback((user) => {
-    // Clear any existing timer first
     if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
-
     refreshTimerRef.current = setInterval(async () => {
-      try {
-        await user.getIdToken(true);
-        console.debug('[AuthContext] Background token refresh successful');
-      } catch (err) {
-        console.error('[AuthContext] Background token refresh failed:', err.message);
-        // If background refresh fails, sign the user out cleanly
+      try { await user.getIdToken(true); }
+      catch (err) {
+        console.error('[AuthContext] Token refresh failed:', err.message);
         await signOut(auth);
       }
     }, REFRESH_INTERVAL_MS);
@@ -49,53 +38,36 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  // ─── Refresh token when tab regains focus ───────────────────────────────────
-  // If the user leaves the tab for >60 min, the token expires. This silently
-  // refreshes on focus so the very next API call has a valid token.
-  useEffect(() => {
-    const handleVisibilityChange = async () => {
-      if (document.visibilityState !== 'visible') return;
-      const user = auth.currentUser;
-      if (!user) return;
-      try {
-        const tokenResult = await user.getIdTokenResult(false);
-        const expiresAt   = new Date(tokenResult.expirationTime).getTime();
-        const msLeft      = expiresAt - Date.now();
-        if (msLeft < 5 * 60 * 1000) {
-          await user.getIdToken(true);
-          console.debug('[AuthContext] Token refreshed on tab focus');
-        }
-      } catch (err) {
-        console.error('[AuthContext] Focus refresh failed:', err.message);
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, []);
-
-  // ─── Auth state listener ────────────────────────────────────────────────────
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      // STEP 1: Set user immediately — page can start rendering right away
       setCurrentUser(user);
 
       if (user) {
+        // STEP 2: Show the page first, load extra data in background
+        setLoading(false);
+
+        // STEP 3: Fetch Firestore doc + token claim in background
+        // User already sees the page — this just fills in liked songs + admin status
         try {
-          // Verify admin status from token claims
-          const tokenResult  = await user.getIdTokenResult();
-          const hasAdminClaim = tokenResult.claims.role === 'admin';
-          const adminEmail    = process.env.REACT_APP_ADMIN_EMAIL;
-          setIsAdmin(hasAdminClaim || (!!adminEmail && user.email === adminEmail));
+          const [tokenResult, userDocSnap] = await Promise.all([
+            // FIX: getIdToken(false) uses CACHED token — no network call needed
+            // unless the token is about to expire. Much faster than getIdTokenResult()
+            user.getIdTokenResult(false).catch(() => null),
+            getDoc(doc(db, 'users', user.uid)).catch(() => null),
+          ]);
 
-          // Fetch or create the user's Firestore document
-          const userRef = doc(db, 'users', user.uid);
-          const userDoc = await getDoc(userRef);
+          // Set admin status from cached token claim
+          if (tokenResult) {
+            setIsAdmin(tokenResult.claims.role === 'admin');
+          }
 
-          if (userDoc.exists()) {
-            setLikedSongs(userDoc.data().likedSongs || []);
-          } else {
-            // Auto-create doc for first-time Google sign-in users
-            await setDoc(userRef, {
+          // Set liked songs
+          if (userDocSnap && userDocSnap.exists()) {
+            setLikedSongs(userDocSnap.data().likedSongs || []);
+          } else if (userDocSnap !== null) {
+            // First time Google sign-in — create user doc
+            await setDoc(doc(db, 'users', user.uid), {
               uid:         user.uid,
               email:       user.email,
               displayName: user.displayName || '',
@@ -105,25 +77,19 @@ export const AuthProvider = ({ children }) => {
             }, { merge: true });
             setLikedSongs([]);
           }
-
-          // Start background token refresh timer
-          startTokenRefreshTimer(user);
-
         } catch (err) {
-          console.error('[AuthContext] Setup error:', err.message);
-          const adminEmail = process.env.REACT_APP_ADMIN_EMAIL;
-          setIsAdmin(!!adminEmail && user.email === adminEmail);
-          setLikedSongs([]);
-          startTokenRefreshTimer(user);
+          // Background fetch failed — safe defaults already set, user is still logged in
+          console.warn('[AuthContext] Background setup failed:', err.message);
         }
+
+        startTokenRefreshTimer(user);
       } else {
-        // User signed out — clean up everything
+        // Logged out
         setIsAdmin(false);
         setLikedSongs([]);
         stopTokenRefreshTimer();
+        setLoading(false);
       }
-
-      setLoading(false);
     });
 
     return () => {
@@ -132,7 +98,24 @@ export const AuthProvider = ({ children }) => {
     };
   }, [startTokenRefreshTimer, stopTokenRefreshTimer]);
 
-  // ─── Auth actions ───────────────────────────────────────────────────────────
+  // Tab focus token refresh
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState !== 'visible') return;
+      const user = auth.currentUser;
+      if (!user) return;
+      try {
+        const tokenResult = await user.getIdTokenResult(false);
+        const msLeft = new Date(tokenResult.expirationTime).getTime() - Date.now();
+        if (msLeft < 5 * 60 * 1000) await user.getIdToken(true);
+      } catch (err) {
+        console.error('[AuthContext] Focus refresh failed:', err.message);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
+
   const signInWithGoogle = useCallback(() => signInWithPopup(auth, googleProvider), []);
 
   const logout = useCallback(async () => {
@@ -140,19 +123,40 @@ export const AuthProvider = ({ children }) => {
     await signOut(auth);
   }, [stopTokenRefreshTimer]);
 
-  const value = {
-    currentUser,
-    isAdmin,
-    loading,
-    logout,
-    signInWithGoogle,
-    likedSongs,
-    setLikedSongs,
-  };
-
   return (
-    <AuthContext.Provider value={value}>
-      {!loading && children}
+    <AuthContext.Provider value={{
+      currentUser,
+      isAdmin,
+      loading,
+      logout,
+      signInWithGoogle,
+      likedSongs,
+      setLikedSongs,
+    }}>
+      {loading ? <LoadingScreen /> : children}
     </AuthContext.Provider>
   );
 };
+
+const LoadingScreen = () => (
+  <div style={{
+    minHeight: '100vh',
+    background: '#0f0f0f',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'column',
+    gap: '16px',
+    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+  }}>
+    <div style={{
+      width: '36px', height: '36px',
+      border: '3px solid #2d2d2d',
+      borderTop: '3px solid #22c55e',
+      borderRadius: '50%',
+      animation: 'spin 0.75s linear infinite',
+    }} />
+    <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    <p style={{ color: '#6b7280', fontSize: '13px' }}>Loading MeloStream…</p>
+  </div>
+);

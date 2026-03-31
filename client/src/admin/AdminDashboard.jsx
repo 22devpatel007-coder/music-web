@@ -3,35 +3,16 @@ import { Link } from "react-router-dom";
 import axiosInstance from "../utils/axiosInstance";
 import Navbar from "../components/Navbar";
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  LineChart,
-  Line,
-  CartesianGrid,
-  Legend,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, LineChart, Line, CartesianGrid,
 } from "recharts";
 
-const COLORS = [
-  "#22c55e",
-  "#3b82f6",
-  "#f59e0b",
-  "#ef4444",
-  "#8b5cf6",
-  "#ec4899",
-  "#14b8a6",
-];
+const COLORS = ["#22c55e","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#ec4899","#14b8a6"];
 
 const AdminDashboard = () => {
   const [stats, setStats] = useState({ songs: 0, users: 0 });
-  const [songs, setSongs] = useState([]);
-  const [users, setUsers] = useState([]);
+  const [songs, setSongs]  = useState([]);
+  const [users, setUsers]  = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -52,7 +33,6 @@ const AdminDashboard = () => {
     fetchStats();
   }, []);
 
-  // Top songs by play count
   const topSongs = [...songs]
     .sort((a, b) => (b.playCount || 0) - (a.playCount || 0))
     .slice(0, 8)
@@ -61,21 +41,15 @@ const AdminDashboard = () => {
       plays: s.playCount || 0,
     }));
 
-  // Genre breakdown
   const genreMap = {};
-  songs.forEach((s) => {
-    if (s.genre) genreMap[s.genre] = (genreMap[s.genre] || 0) + 1;
-  });
-  const genreData = Object.entries(genreMap).map(([name, value]) => ({
-    name,
-    value,
-  }));
+  songs.forEach((s) => { if (s.genre) genreMap[s.genre] = (genreMap[s.genre] || 0) + 1; });
+  const genreData = Object.entries(genreMap).map(([name, value]) => ({ name, value }));
 
-  // Uploads per month (last 6 months)
+  // FIX: buildMonthlyData now parses ISO strings (from serializeSong/serializeUser)
+  // instead of trying to call .toDate() on Firestore Timestamp objects that
+  // don't survive JSON serialization.
   const uploadsByMonth = buildMonthlyData(songs, "createdAt", "uploads");
-
-  // Users per month (last 6 months)
-  const usersByMonth = buildMonthlyData(users, "createdAt", "users");
+  const usersByMonth   = buildMonthlyData(users, "createdAt", "users");
 
   return (
     <div style={styles.page}>
@@ -86,170 +60,57 @@ const AdminDashboard = () => {
           <p style={styles.subheading}>Overview of your MeloStream platform</p>
         </div>
 
-        {/* Stat Cards */}
         <div style={styles.statsRow}>
-          <StatCard
-            label="Total Songs"
-            value={loading ? "…" : stats.songs}
-            icon={<MusicIcon />}
-            color="#22c55e"
-          />
-          <StatCard
-            label="Registered Users"
-            value={loading ? "…" : stats.users}
-            icon={<UsersIcon />}
-            color="#3b82f6"
-          />
-          <StatCard
-            label="Total Plays"
-            value={
-              loading ? "…" : songs.reduce((a, s) => a + (s.playCount || 0), 0)
-            }
-            icon={<PlayIcon />}
-            color="#f59e0b"
-          />
-          <StatCard
-            label="Genres"
-            value={loading ? "…" : Object.keys(genreMap).length}
-            icon={<TagIcon />}
-            color="#8b5cf6"
-          />
+          <StatCard label="Total Songs"      value={loading ? "…" : stats.songs} icon={<MusicIcon />} color="#22c55e" />
+          <StatCard label="Registered Users" value={loading ? "…" : stats.users} icon={<UsersIcon />} color="#3b82f6" />
+          <StatCard label="Total Plays"      value={loading ? "…" : songs.reduce((a, s) => a + (s.playCount || 0), 0)} icon={<PlayIcon />} color="#f59e0b" />
+          <StatCard label="Genres"           value={loading ? "…" : Object.keys(genreMap).length} icon={<TagIcon />} color="#8b5cf6" />
         </div>
 
-        {/* Quick Links */}
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>Quick Actions</h2>
           <div style={styles.actionsRow}>
-            <ActionLink
-              to="/admin/upload"
-              primary
-              label="Upload Song"
-              desc="Add new music"
-              icon={<UploadIcon />}
-            />
-            <ActionLink
-              to="/admin/songs"
-              label="Manage Songs"
-              desc="View & delete tracks"
-              icon={<MusicIcon />}
-            />
-            <ActionLink
-              to="/admin/users"
-              label="View Users"
-              desc="All registered accounts"
-              icon={<UsersIcon />}
-            />
+            <ActionLink to="/admin/upload" primary label="Upload Song"   desc="Add new music"          icon={<UploadIcon />} />
+            <ActionLink to="/admin/songs"        label="Manage Songs"  desc="View & delete tracks"    icon={<MusicIcon />} />
+            <ActionLink to="/admin/users"        label="View Users"    desc="All registered accounts" icon={<UsersIcon />} />
           </div>
         </div>
 
-        {/* Charts */}
         {!loading && (
           <>
             <div style={styles.chartsGrid}>
-              {/* Top Songs */}
               <div style={styles.chartCard}>
                 <h3 style={styles.chartTitle}>Top Songs by Plays</h3>
-                {topSongs.length === 0 ? (
-                  <EmptyChart />
-                ) : (
+                {topSongs.length === 0 ? <EmptyChart /> : (
                   <ResponsiveContainer width="100%" height={200}>
-                    <BarChart
-                      data={topSongs}
-                      margin={{ top: 4, right: 8, left: -20, bottom: 0 }}
-                    >
-                      <XAxis
-                        dataKey="name"
-                        tick={{ fill: "#6b7280", fontSize: 11 }}
-                        axisLine={false}
-                        tickLine={false}
-                      />
-                      <YAxis
-                        tick={{ fill: "#6b7280", fontSize: 11 }}
-                        axisLine={false}
-                        tickLine={false}
-                      />
-                      <Tooltip
-                        contentStyle={tooltipStyle}
-                        cursor={{ fill: "rgba(255,255,255,0.04)" }}
-                      />
-                      <Bar
-                        dataKey="plays"
-                        fill="#22c55e"
-                        radius={[4, 4, 0, 0]}
-                      />
+                    <BarChart data={topSongs} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                      <XAxis dataKey="name" tick={{ fill: "#6b7280", fontSize: 11 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fill: "#6b7280", fontSize: 11 }} axisLine={false} tickLine={false} />
+                      <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                      <Bar dataKey="plays" fill="#22c55e" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 )}
               </div>
 
-              {/* Genre Breakdown */}
               <div style={styles.chartCard}>
                 <h3 style={styles.chartTitle}>Genre Breakdown</h3>
-                {genreData.length === 0 ? (
-                  <EmptyChart />
-                ) : (
-                  <div
-                    style={{ display: "flex", alignItems: "center", gap: 16 }}
-                  >
+                {genreData.length === 0 ? <EmptyChart /> : (
+                  <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
                     <ResponsiveContainer width="50%" height={200}>
                       <PieChart>
-                        <Pie
-                          data={genreData}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={50}
-                          outerRadius={80}
-                          dataKey="value"
-                          paddingAngle={3}
-                        >
-                          {genreData.map((_, i) => (
-                            <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                          ))}
+                        <Pie data={genreData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={3}>
+                          {genreData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                         </Pie>
                         <Tooltip contentStyle={tooltipStyle} />
                       </PieChart>
                     </ResponsiveContainer>
                     <div style={{ flex: 1 }}>
                       {genreData.map((g, i) => (
-                        <div
-                          key={g.name}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                            marginBottom: 8,
-                          }}
-                        >
-                          <span
-                            style={{
-                              width: 10,
-                              height: 10,
-                              borderRadius: 2,
-                              background: COLORS[i % COLORS.length],
-                              flexShrink: 0,
-                            }}
-                          />
-                          <span
-                            style={{
-                              color: "#9ca3af",
-                              fontSize: 12,
-                              flex: 1,
-                              whiteSpace: "nowrap",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                            }}
-                          >
-                            {g.name}
-                          </span>
-                          <span
-                            style={{
-                              color: "#fff",
-                              fontSize: 12,
-                              fontWeight: 600,
-                            }}
-                          >
-                            {g.value}
-                          </span>
+                        <div key={g.name} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                          <span style={{ width: 10, height: 10, borderRadius: 2, background: COLORS[i % COLORS.length], flexShrink: 0 }} />
+                          <span style={{ color: "#9ca3af", fontSize: 12, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.name}</span>
+                          <span style={{ color: "#fff", fontSize: 12, fontWeight: 600 }}>{g.value}</span>
                         </div>
                       ))}
                     </div>
@@ -259,66 +120,28 @@ const AdminDashboard = () => {
             </div>
 
             <div style={styles.chartsGrid}>
-              {/* Uploads per month */}
               <div style={styles.chartCard}>
                 <h3 style={styles.chartTitle}>Uploads / Month</h3>
                 <ResponsiveContainer width="100%" height={180}>
-                  <LineChart
-                    data={uploadsByMonth}
-                    margin={{ top: 4, right: 8, left: -20, bottom: 0 }}
-                  >
+                  <LineChart data={uploadsByMonth} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
                     <CartesianGrid stroke="#2d2d2d" strokeDasharray="4 4" />
-                    <XAxis
-                      dataKey="month"
-                      tick={{ fill: "#6b7280", fontSize: 11 }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      tick={{ fill: "#6b7280", fontSize: 11 }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
+                    <XAxis dataKey="month" tick={{ fill: "#6b7280", fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: "#6b7280", fontSize: 11 }} axisLine={false} tickLine={false} />
                     <Tooltip contentStyle={tooltipStyle} />
-                    <Line
-                      type="monotone"
-                      dataKey="uploads"
-                      stroke="#22c55e"
-                      strokeWidth={2}
-                      dot={{ fill: "#22c55e", r: 4 }}
-                    />
+                    <Line type="monotone" dataKey="uploads" stroke="#22c55e" strokeWidth={2} dot={{ fill: "#22c55e", r: 4 }} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
 
-              {/* Users per month */}
               <div style={styles.chartCard}>
                 <h3 style={styles.chartTitle}>New Users / Month</h3>
                 <ResponsiveContainer width="100%" height={180}>
-                  <LineChart
-                    data={usersByMonth}
-                    margin={{ top: 4, right: 8, left: -20, bottom: 0 }}
-                  >
+                  <LineChart data={usersByMonth} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
                     <CartesianGrid stroke="#2d2d2d" strokeDasharray="4 4" />
-                    <XAxis
-                      dataKey="month"
-                      tick={{ fill: "#6b7280", fontSize: 11 }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      tick={{ fill: "#6b7280", fontSize: 11 }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
+                    <XAxis dataKey="month" tick={{ fill: "#6b7280", fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: "#6b7280", fontSize: 11 }} axisLine={false} tickLine={false} />
                     <Tooltip contentStyle={tooltipStyle} />
-                    <Line
-                      type="monotone"
-                      dataKey="users"
-                      stroke="#3b82f6"
-                      strokeWidth={2}
-                      dot={{ fill: "#3b82f6", r: 4 }}
-                    />
+                    <Line type="monotone" dataKey="users" stroke="#3b82f6" strokeWidth={2} dot={{ fill: "#3b82f6", r: 4 }} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -326,7 +149,6 @@ const AdminDashboard = () => {
           </>
         )}
 
-        {/* Recent uploads */}
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>Recent Uploads</h2>
           {songs.length === 0 ? (
@@ -335,30 +157,14 @@ const AdminDashboard = () => {
             <div style={styles.recentList}>
               {songs.slice(0, 6).map((song) => (
                 <div key={song.id} style={styles.recentItem}>
-                  <img
-                    src={song.coverUrl}
-                    alt={song.title}
-                    style={styles.recentCover}
-                    onError={(e) => {
-                      e.target.src =
-                        "https://placehold.co/48x48/111/555?text=♪";
-                    }}
-                  />
+                  <img src={song.coverUrl} alt={song.title} style={styles.recentCover}
+                    onError={(e) => { e.target.src = "https://placehold.co/48x48/111/555?text=♪"; }} />
                   <div style={styles.recentInfo}>
                     <p style={styles.recentTitle}>{song.title}</p>
                     <p style={styles.recentArtist}>{song.artist}</p>
                   </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 12,
-                      marginLeft: "auto",
-                    }}
-                  >
-                    <span style={{ color: "#6b7280", fontSize: 12 }}>
-                      {song.playCount || 0} plays
-                    </span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, marginLeft: "auto" }}>
+                    <span style={{ color: "#6b7280", fontSize: 12 }}>{song.playCount || 0} plays</span>
                     <span style={styles.recentGenre}>{song.genre}</span>
                   </div>
                 </div>
@@ -371,61 +177,35 @@ const AdminDashboard = () => {
   );
 };
 
-// ── Helpers ──
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+// FIX: Handles ISO date strings (from API) as well as plain Date objects.
+// Previously tried raw?.toDate() which only works on live Firestore Timestamps.
 function buildMonthlyData(items, dateField, key) {
   const months = [];
   const now = new Date();
   for (let i = 5; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    months.push({
-      month: d.toLocaleString("default", { month: "short" }),
-      year: d.getFullYear(),
-      m: d.getMonth(),
-      [key]: 0,
-    });
+    months.push({ month: d.toLocaleString("default", { month: "short" }), year: d.getFullYear(), m: d.getMonth(), [key]: 0 });
   }
   items.forEach((item) => {
     const raw = item[dateField];
     if (!raw) return;
-    let d;
-    if (raw?.toDate) d = raw.toDate();
-    else if (raw?.seconds) d = new Date(raw.seconds * 1000);
-    else d = new Date(raw);
-    if (isNaN(d)) return;
-    const entry = months.find(
-      (m) => m.m === d.getMonth() && m.year === d.getFullYear(),
-    );
+    const d = new Date(raw); // Works for ISO strings, epoch numbers, and Date objects
+    if (isNaN(d.getTime())) return;
+    const entry = months.find(m => m.m === d.getMonth() && m.year === d.getFullYear());
     if (entry) entry[key]++;
   });
   return months;
 }
 
-const tooltipStyle = {
-  background: "#1a1a1a",
-  border: "1px solid #2d2d2d",
-  borderRadius: 8,
-  color: "#fff",
-  fontSize: 12,
-};
-const EmptyChart = () => (
-  <p
-    style={{
-      color: "#4b5563",
-      fontSize: 13,
-      textAlign: "center",
-      padding: "40px 0",
-    }}
-  >
-    No data yet
-  </p>
-);
+const tooltipStyle = { background: "#1a1a1a", border: "1px solid #2d2d2d", borderRadius: 8, color: "#fff", fontSize: 12 };
+const EmptyChart = () => <p style={{ color: "#4b5563", fontSize: 13, textAlign: "center", padding: "40px 0" }}>No data yet</p>;
 
-// ── Sub-components ──
+// ── Sub-components ────────────────────────────────────────────────────────────
 const StatCard = ({ label, value, icon, color }) => (
   <div style={styles.statCard}>
-    <div style={{ ...styles.statIconWrap, background: `${color}18` }}>
-      {icon}
-    </div>
+    <div style={{ ...styles.statIconWrap, background: `${color}18` }}>{icon}</div>
     <div>
       <p style={{ ...styles.statValue, color }}>{value}</p>
       <p style={styles.statLabel}>{label}</p>
@@ -434,267 +214,53 @@ const StatCard = ({ label, value, icon, color }) => (
 );
 
 const ActionLink = ({ to, label, desc, icon, primary }) => (
-  <Link
-    to={to}
-    style={{
-      ...styles.actionCard,
-      ...(primary ? styles.actionCardPrimary : {}),
-    }}
-  >
-    <div
-      style={{
-        ...styles.actionIcon,
-        ...(primary ? styles.actionIconPrimary : {}),
-      }}
-    >
-      {icon}
-    </div>
+  <Link to={to} style={{ ...styles.actionCard, ...(primary ? styles.actionCardPrimary : {}) }}>
+    <div style={{ ...styles.actionIcon, ...(primary ? styles.actionIconPrimary : {}) }}>{icon}</div>
     <div>
-      <p
-        style={{
-          ...styles.actionLabel,
-          ...(primary ? styles.actionLabelPrimary : {}),
-        }}
-      >
-        {label}
-      </p>
+      <p style={{ ...styles.actionLabel, ...(primary ? styles.actionLabelPrimary : {}) }}>{label}</p>
       <p style={styles.actionDesc}>{desc}</p>
     </div>
   </Link>
 );
 
-// ── Icons ──
-const MusicIcon = () => (
-  <svg
-    width="18"
-    height="18"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-  >
-    <path d="M9 18V5l12-2v13" />
-    <circle cx="6" cy="18" r="3" />
-    <circle cx="18" cy="16" r="3" />
-  </svg>
-);
-const UsersIcon = () => (
-  <svg
-    width="18"
-    height="18"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-  >
-    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-    <circle cx="9" cy="7" r="4" />
-    <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-  </svg>
-);
-const PlayIcon = () => (
-  <svg
-    width="18"
-    height="18"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-  >
-    <polygon points="5 3 19 12 5 21 5 3" />
-  </svg>
-);
-const TagIcon = () => (
-  <svg
-    width="18"
-    height="18"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-  >
-    <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
-    <line x1="7" y1="7" x2="7.01" y2="7" />
-  </svg>
-);
-const UploadIcon = () => (
-  <svg
-    width="18"
-    height="18"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-  >
-    <polyline points="16 16 12 12 8 16" />
-    <line x1="12" y1="12" x2="12" y2="21" />
-    <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3" />
-  </svg>
-);
+// ── Icons ─────────────────────────────────────────────────────────────────────
+const MusicIcon  = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>;
+const UsersIcon  = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
+const PlayIcon   = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>;
+const TagIcon    = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>;
+const UploadIcon = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>;
 
 const styles = {
-  page: {
-    minHeight: "100vh",
-    background: "#0f0f0f",
-    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
-  },
-  container: {
-    maxWidth: "1000px",
-    margin: "0 auto",
-    padding: "32px 20px 80px",
-  },
+  page: { minHeight: "100vh", background: "#0f0f0f", fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif" },
+  container: { maxWidth: "1000px", margin: "0 auto", padding: "32px 20px 80px" },
   pageHeader: { marginBottom: "28px" },
-  heading: {
-    color: "#fff",
-    fontSize: "22px",
-    fontWeight: "700",
-    letterSpacing: "-0.3px",
-    marginBottom: "4px",
-  },
+  heading: { color: "#fff", fontSize: "22px", fontWeight: "700", letterSpacing: "-0.3px", marginBottom: "4px" },
   subheading: { color: "#6b7280", fontSize: "13px" },
-  statsRow: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-    gap: "14px",
-    marginBottom: "32px",
-  },
-  statCard: {
-    background: "#1a1a1a",
-    border: "1px solid #2d2d2d",
-    borderRadius: "12px",
-    padding: "20px",
-    display: "flex",
-    alignItems: "center",
-    gap: "14px",
-  },
-  statIconWrap: {
-    width: "44px",
-    height: "44px",
-    borderRadius: "10px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-    color: "#fff",
-  },
-  statValue: {
-    fontSize: "28px",
-    fontWeight: "800",
-    letterSpacing: "-1px",
-    lineHeight: 1,
-    marginBottom: "4px",
-  },
+  statsRow: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "14px", marginBottom: "32px" },
+  statCard: { background: "#1a1a1a", border: "1px solid #2d2d2d", borderRadius: "12px", padding: "20px", display: "flex", alignItems: "center", gap: "14px" },
+  statIconWrap: { width: "44px", height: "44px", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "#fff" },
+  statValue: { fontSize: "28px", fontWeight: "800", letterSpacing: "-1px", lineHeight: 1, marginBottom: "4px" },
   statLabel: { color: "#6b7280", fontSize: "12px" },
   section: { marginBottom: "32px" },
-  sectionTitle: {
-    color: "#9ca3af",
-    fontSize: "12px",
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: "0.8px",
-    marginBottom: "14px",
-  },
-  actionsRow: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-    gap: "12px",
-  },
-  actionCard: {
-    background: "#1a1a1a",
-    border: "1px solid #2d2d2d",
-    borderRadius: "12px",
-    padding: "18px",
-    textDecoration: "none",
-    display: "flex",
-    flexDirection: "column",
-    gap: "10px",
-    transition: "border-color 0.2s",
-  },
-  actionCardPrimary: {
-    background: "rgba(34,197,94,0.08)",
-    borderColor: "rgba(34,197,94,0.3)",
-  },
-  actionIcon: {
-    width: "34px",
-    height: "34px",
-    background: "#2d2d2d",
-    borderRadius: "8px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    color: "#9ca3af",
-  },
+  sectionTitle: { color: "#9ca3af", fontSize: "12px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "14px" },
+  actionsRow: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "12px" },
+  actionCard: { background: "#1a1a1a", border: "1px solid #2d2d2d", borderRadius: "12px", padding: "18px", textDecoration: "none", display: "flex", flexDirection: "column", gap: "10px", transition: "border-color 0.2s" },
+  actionCardPrimary: { background: "rgba(34,197,94,0.08)", borderColor: "rgba(34,197,94,0.3)" },
+  actionIcon: { width: "34px", height: "34px", background: "#2d2d2d", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af" },
   actionIconPrimary: { background: "#22c55e", color: "#000" },
-  actionLabel: {
-    color: "#fff",
-    fontSize: "14px",
-    fontWeight: "600",
-    marginBottom: "2px",
-  },
+  actionLabel: { color: "#fff", fontSize: "14px", fontWeight: "600", marginBottom: "2px" },
   actionLabelPrimary: { color: "#22c55e" },
   actionDesc: { color: "#6b7280", fontSize: "12px" },
-  chartsGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
-    gap: "14px",
-    marginBottom: "16px",
-  },
-  chartCard: {
-    background: "#1a1a1a",
-    border: "1px solid #2d2d2d",
-    borderRadius: "12px",
-    padding: "20px",
-  },
-  chartTitle: {
-    color: "#9ca3af",
-    fontSize: "12px",
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: "0.8px",
-    marginBottom: "16px",
-  },
-  recentList: {
-    background: "#1a1a1a",
-    border: "1px solid #2d2d2d",
-    borderRadius: "12px",
-    overflow: "hidden",
-  },
-  recentItem: {
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    padding: "12px 16px",
-    borderBottom: "1px solid #2d2d2d",
-  },
-  recentCover: {
-    width: "40px",
-    height: "40px",
-    borderRadius: "7px",
-    objectFit: "cover",
-    background: "#111",
-    flexShrink: 0,
-  },
+  chartsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "14px", marginBottom: "16px" },
+  chartCard: { background: "#1a1a1a", border: "1px solid #2d2d2d", borderRadius: "12px", padding: "20px" },
+  chartTitle: { color: "#9ca3af", fontSize: "12px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "16px" },
+  recentList: { background: "#1a1a1a", border: "1px solid #2d2d2d", borderRadius: "12px", overflow: "hidden" },
+  recentItem: { display: "flex", alignItems: "center", gap: "12px", padding: "12px 16px", borderBottom: "1px solid #2d2d2d" },
+  recentCover: { width: "40px", height: "40px", borderRadius: "7px", objectFit: "cover", background: "#111", flexShrink: 0 },
   recentInfo: { flex: 1, minWidth: 0 },
-  recentTitle: {
-    color: "#fff",
-    fontSize: "13px",
-    fontWeight: "600",
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-  },
+  recentTitle: { color: "#fff", fontSize: "13px", fontWeight: "600", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
   recentArtist: { color: "#6b7280", fontSize: "11px" },
-  recentGenre: {
-    background: "rgba(34,197,94,0.1)",
-    color: "#22c55e",
-    border: "1px solid rgba(34,197,94,0.2)",
-    borderRadius: "4px",
-    padding: "2px 8px",
-    fontSize: "11px",
-    fontWeight: "500",
-    flexShrink: 0,
-  },
+  recentGenre: { background: "rgba(34,197,94,0.1)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.2)", borderRadius: "4px", padding: "2px 8px", fontSize: "11px", fontWeight: "500", flexShrink: 0 },
   empty: { color: "#6b7280", fontSize: "14px" },
 };
 

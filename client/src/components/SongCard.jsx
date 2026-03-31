@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { usePlayer } from '../context/PlayerContext';
 import { useAuth } from '../context/AuthContext';
-import { doc, updateDoc, arrayUnion, arrayRemove, increment } from 'firebase/firestore';
+import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db } from '../firebase';
 
 const SongCard = ({ song, songList }) => {
@@ -14,12 +14,9 @@ const SongCard = ({ song, songList }) => {
 
   const handlePlay = (e) => {
     e.stopPropagation();
+    // FIX: Removed the duplicate `updateDoc(ref, { playCount: increment(1) })` call
+    // that was here. Play count is now incremented exactly once inside PlayerContext.playSong().
     playSong(song, songList);
-    // fire-and-forget play count
-    if (currentSong?.id !== song.id) {
-      const ref = doc(db, 'songs', song.id);
-      updateDoc(ref, { playCount: increment(1) }).catch(() => {});
-    }
   };
 
   const handleLike = async (e) => {
@@ -106,41 +103,25 @@ const HeartIcon = ({ filled }) => (
 
 const styles = {
   card: {
-    background: '#1a1a1a',
-    border: '1px solid #2d2d2d',
-    borderRadius: '12px',
-    overflow: 'hidden',
-    transition: 'background 0.2s, outline 0.2s',
+    background: '#1a1a1a', border: '1px solid #2d2d2d', borderRadius: '12px',
+    overflow: 'hidden', transition: 'background 0.2s, outline 0.2s',
     fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
   },
   imgWrap: { position: 'relative', width: '100%', paddingBottom: '100%', background: '#111' },
   img: { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' },
   likeBtn: {
-    position: 'absolute',
-    top: '8px',
-    right: '8px',
-    background: 'rgba(0,0,0,0.6)',
-    border: 'none',
-    borderRadius: '50%',
-    width: '32px',
-    height: '32px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-    transition: 'opacity 0.2s, color 0.2s',
-    zIndex: 2,
-    backdropFilter: 'blur(4px)',
+    position: 'absolute', top: '8px', right: '8px',
+    background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '50%',
+    width: '32px', height: '32px', display: 'flex', alignItems: 'center',
+    justifyContent: 'center', cursor: 'pointer',
+    transition: 'opacity 0.2s, color 0.2s', zIndex: 2, backdropFilter: 'blur(4px)',
   },
   overlay: {
-    position: 'absolute', inset: 0,
-    background: 'rgba(0,0,0,0.45)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    transition: 'opacity 0.2s',
+    position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.45)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'opacity 0.2s',
   },
   playBtn: {
-    width: '44px', height: '44px',
-    background: '#22c55e', borderRadius: '50%',
+    width: '44px', height: '44px', background: '#22c55e', borderRadius: '50%',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     boxShadow: '0 4px 16px rgba(34,197,94,0.4)',
   },

@@ -2,99 +2,92 @@ const { db } = require('../config/firebase');
 const cloudinary = require('../config/cloudinary');
 const streamifier = require('streamifier');
 
-// Helper
-const uploadToCloudinary = (buffer, options) => {
-  return new Promise((resolve, reject) => {
-    const uploadStream = cloudinary.uploader.upload_stream(
-      options,
-      (error, result) => {
-        if (error) reject(error);
-        else resolve(result);
-      }
-    );
-    streamifier.createReadStream(buffer).pipe(uploadStream);
+// ─── Helper ───────────────────────────────────────────────────────────────────
+const uploadToCloudinary = (buffer, options) =>
+  new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(options, (err, result) => {
+      if (err) reject(err);
+      else resolve(result);
+    });
+    streamifier.createReadStream(buffer).pipe(stream);
   });
-};
 
-// GET all songs
+// ─── Serialize a Firestore doc to a plain JSON-safe object ───────────────────
+// Converts Firestore Timestamps → ISO strings so the client always gets
+// consistent data (no { _seconds, _nanoseconds } objects leaking through).
+function serializeSong(id, data) {
+  return {
+    id,
+    ...data,
+    createdAt: data.createdAt?.toDate
+      ? data.createdAt.toDate().toISOString()
+      : data.createdAt ?? null,
+  };
+}
+
+// GET /api/songs
 exports.getAllSongs = async (req, res) => {
   try {
-    const snapshot = await db.collection('songs')
-      .orderBy('createdAt', 'desc').get();
-    const songs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const snapshot = await db.collection('songs').orderBy('createdAt', 'desc').get();
+    const songs = snapshot.docs.map(doc => serializeSong(doc.id, doc.data()));
     res.json(songs);
   } catch (err) {
-    console.error('Error fetching songs:', err.message);
+    console.error('getAllSongs error:', err.message);
     res.status(500).json({ error: err.message });
   }
 };
 
-// GET single song
+// GET /api/songs/:id
 exports.getSongById = async (req, res) => {
   try {
-    const doc = await db.collection('songs').doc(req.params.id).get();
-    if (!doc.exists) return res.status(404).json({ error: 'Song not found' });
-    res.json({ id: doc.id, ...doc.data() });
+    const docSnap = await db.collection('songs').doc(req.params.id).get();
+    if (!docSnap.exists) return res.status(404).json({ error: 'Song not found' });
+    res.json(serializeSong(docSnap.id, docSnap.data()));
   } catch (err) {
+    console.error('getSongById error:', err.message);
     res.status(500).json({ error: err.message });
   }
 };
 
-// POST upload song
+// POST /api/songs  (admin only)
 exports.uploadSong = async (req, res) => {
   try {
     console.log('=== UPLOAD STARTED ===');
-    console.log('Body:', req.body);
-    console.log('Files:', req.files);
-    console.log('User:', req.user);
 
     const { title, artist, genre, duration } = req.body;
 
-    if (!req.files) {
-      return res.status(400).json({ error: 'No files received' });
-    }
-    if (!req.files['song']) {
-      return res.status(400).json({ error: 'No song file received' });
-    }
-    if (!req.files['cover']) {
-      return res.status(400).json({ error: 'No cover file received' });
-    }
+    if (!req.files?.['song']?.[0]) return res.status(400).json({ error: 'No song file received' });
+    if (!req.files?.['cover']?.[0]) return res.status(400).json({ error: 'No cover file received' });
 
-    const songFile = req.files['song'][0];
+    const songFile  = req.files['song'][0];
     const coverFile = req.files['cover'][0];
 
-    console.log('Song file:', songFile.originalname, songFile.mimetype);
-    console.log('Cover file:', coverFile.originalname, coverFile.mimetype);
+    const [songResult, coverResult] = await Promise.all([
+      uploadToCloudinary(songFile.buffer, {
+        resource_type: 'video',
+        folder: 'melostream/songs',
+        public_id: `${Date.now()}-${title}`,
+        format: 'mp3',
+      }),
+      uploadToCloudinary(coverFile.buffer, {
+        resource_type: 'image',
+        folder: 'melostream/covers',
+        public_id: `${Date.now()}-${title}-cover`,
+      }),
+    ]);
 
-    // Upload MP3
-    console.log('Uploading MP3 to Cloudinary...');
-    const songResult = await uploadToCloudinary(songFile.buffer, {
-      resource_type: 'video',
-      folder: 'melostream/songs',
-      public_id: `${Date.now()}-${title}`,
-      format: 'mp3',
-    });
-    console.log('MP3 uploaded:', songResult.secure_url);
-
-    // Upload Cover
-    console.log('Uploading cover to Cloudinary...');
-    const coverResult = await uploadToCloudinary(coverFile.buffer, {
-      resource_type: 'image',
-      folder: 'melostream/covers',
-      public_id: `${Date.now()}-${title}-cover`,
-    });
-    console.log('Cover uploaded:', coverResult.secure_url);
-
-    // Save to Firestore
-    console.log('Saving to Firestore...');
     const songData = {
       title,
       artist,
       genre,
+      // FIX: lowercase index fields for case-insensitive Firestore search
+      titleLower:  title.toLowerCase(),
+      artistLower: artist.toLowerCase(),
       duration: Number(duration),
       fileUrl: songResult.secure_url,
       coverUrl: coverResult.secure_url,
       storagePath: songResult.public_id,
+      coverStoragePath: coverResult.public_id, // FIX: store cover path for deletion
       playCount: 0,
       uploadedBy: req.user.uid,
       createdAt: new Date(),
@@ -102,30 +95,35 @@ exports.uploadSong = async (req, res) => {
 
     const docRef = await db.collection('songs').add(songData);
     console.log('=== UPLOAD SUCCESS ===', docRef.id);
-    res.status(201).json({ id: docRef.id, ...songData });
-
+    res.status(201).json(serializeSong(docRef.id, songData));
   } catch (err) {
-    console.error('=== UPLOAD ERROR ===');
-    console.error('Message:', err.message);
-    console.error('Stack:', err.stack);
+    console.error('=== UPLOAD ERROR ===', err.message);
     res.status(500).json({ error: err.message });
   }
 };
 
-// DELETE song
+// DELETE /api/songs/:id  (admin only)
 exports.deleteSong = async (req, res) => {
   try {
-    const doc = await db.collection('songs').doc(req.params.id).get();
-    if (!doc.exists) return res.status(404).json({ error: 'Song not found' });
+    const docSnap = await db.collection('songs').doc(req.params.id).get();
+    if (!docSnap.exists) return res.status(404).json({ error: 'Song not found' });
 
-    const { storagePath } = doc.data();
-    await cloudinary.uploader.destroy(storagePath, {
-      resource_type: 'video'
-    });
+    const { storagePath, coverStoragePath } = docSnap.data();
+
+    // Delete from Cloudinary in parallel (fire-and-forget errors — don't block deletion)
+    await Promise.allSettled([
+      storagePath
+        ? cloudinary.uploader.destroy(storagePath, { resource_type: 'video' })
+        : Promise.resolve(),
+      coverStoragePath
+        ? cloudinary.uploader.destroy(coverStoragePath, { resource_type: 'image' })
+        : Promise.resolve(),
+    ]);
 
     await db.collection('songs').doc(req.params.id).delete();
     res.json({ message: 'Song deleted successfully' });
   } catch (err) {
+    console.error('deleteSong error:', err.message);
     res.status(500).json({ error: err.message });
   }
 };
