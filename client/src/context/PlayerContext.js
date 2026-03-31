@@ -23,6 +23,7 @@ export const PlayerProvider = ({ children }) => {
   const [volume, setVolume]           = useState(1);
   const [recentlyPlayed, setRecentlyPlayed] = useState([]);
   const [showQueue, setShowQueue]     = useState(false);
+  const [playingPlaylistName, setPlayingPlaylistName] = useState(null);
 
   const audioRef = useRef(new Audio());
 
@@ -246,6 +247,13 @@ export const PlayerProvider = ({ children }) => {
   const toggleShuffle = () => setShuffle(s => !s);
   const toggleQueue   = () => setShowQueue(p => !p);
 
+  const playPlaylist = useCallback((playlistSongs, playlistName, shuffled = false) => {
+    if (!playlistSongs.length) return;
+    const list = shuffled ? [...playlistSongs].sort(() => Math.random() - 0.5) : playlistSongs;
+    setPlayingPlaylistName(playlistName);
+    playSong(list[0], list);
+  }, [playSong]);
+
   return (
     <PlayerContext.Provider value={{
       currentSong, isPlaying, audioRef,
@@ -260,6 +268,8 @@ export const PlayerProvider = ({ children }) => {
       recentlyPlayed,
       showQueue, toggleQueue,
       removeFromQueue, moveSongInQueue,
+      playPlaylist,
+      playingPlaylistName,
     }}>
       {children}
     </PlayerContext.Provider>
