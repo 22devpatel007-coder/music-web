@@ -1,5 +1,15 @@
 const { db } = require('../config/firebase');
 
+// ─── NOTE ON SEARCH STRATEGY ─────────────────────────────────────────────────
+// Firestore range queries are case-sensitive and prefix-only.
+// FIX: We store a `titleLower` and `artistLower` field on each song document
+//      (populated at upload time in songs.controller.js) and query those fields
+//      so that searching "blinding" matches "Blinding Lights".
+//
+// If you have existing documents without these fields, run the migration script:
+//   scripts/migrateSearchFields.js
+// ─────────────────────────────────────────────────────────────────────────────
+
 exports.searchSongs = async (req, res) => {
   try {
     const { q } = req.query;
@@ -8,16 +18,16 @@ exports.searchSongs = async (req, res) => {
     const searchTerm = q.toLowerCase().trim();
     const endTerm    = searchTerm + '\uf8ff';
 
-    // Run title and artist queries in parallel
+    // Query both lowercase index fields in parallel
     const [titleSnap, artistSnap] = await Promise.all([
       db.collection('songs')
-        .where('title', '>=', searchTerm)
-        .where('title', '<=', endTerm)
+        .where('titleLower', '>=', searchTerm)
+        .where('titleLower', '<=', endTerm)
         .limit(20)
         .get(),
       db.collection('songs')
-        .where('artist', '>=', searchTerm)
-        .where('artist', '<=', endTerm)
+        .where('artistLower', '>=', searchTerm)
+        .where('artistLower', '<=', endTerm)
         .limit(20)
         .get(),
     ]);
@@ -25,7 +35,16 @@ exports.searchSongs = async (req, res) => {
     // Merge and deduplicate by doc id
     const map = new Map();
     for (const snap of [titleSnap, artistSnap]) {
-      snap.docs.forEach(doc => map.set(doc.id, { id: doc.id, ...doc.data() }));
+      snap.docs.forEach(doc => {
+        const data = doc.data();
+        map.set(doc.id, {
+          id: doc.id,
+          ...data,
+          createdAt: data.createdAt?.toDate
+            ? data.createdAt.toDate().toISOString()
+            : data.createdAt ?? null,
+        });
+      });
     }
 
     res.json(Array.from(map.values()));

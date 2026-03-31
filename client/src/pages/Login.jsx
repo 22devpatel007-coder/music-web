@@ -5,10 +5,10 @@ import { auth } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 
 const Login = () => {
-  const [email, setEmail] = useState('');
+  const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [error, setError]       = useState('');
+  const [loading, setLoading]   = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const { signInWithGoogle } = useAuth();
   const navigate = useNavigate();
@@ -18,13 +18,11 @@ const Login = () => {
     setError('');
     setLoading(true);
     try {
-      const result = await signInWithEmailAndPassword(auth, email, password);
-      const adminEmail = process.env.REACT_APP_ADMIN_EMAIL;
-      if (result.user.email === adminEmail) {
-        navigate('/admin');
-      } else {
-        navigate('/home');
-      }
+      await signInWithEmailAndPassword(auth, email, password);
+      // FIX: Just navigate to /home — no extra getIdTokenResult() call here.
+      // AdminRoute in App.js handles redirecting admins automatically.
+      // AuthContext handles the token claim check in the background.
+      navigate('/home');
     } catch (err) {
       setError('Invalid email or password. Please try again.');
     }
@@ -35,13 +33,9 @@ const Login = () => {
     setError('');
     setGoogleLoading(true);
     try {
-      const result = await signInWithGoogle();
-      const adminEmail = process.env.REACT_APP_ADMIN_EMAIL;
-      if (result.user.email === adminEmail) {
-        navigate('/admin');
-      } else {
-        navigate('/home');
-      }
+      await signInWithGoogle();
+      // FIX: Same — just go to /home, no extra token check
+      navigate('/home');
     } catch (err) {
       if (err.code === 'auth/unauthorized-domain') {
         setError('Domain not authorized. Add it in Firebase Console.');
@@ -59,7 +53,6 @@ const Login = () => {
   return (
     <div style={styles.page}>
       <div style={styles.card}>
-        {/* Logo */}
         <div style={styles.logoRow}>
           <div style={styles.logoIcon}>♪</div>
           <span style={styles.logoText}>MeloStream</span>
@@ -78,8 +71,8 @@ const Login = () => {
               onChange={(e) => setEmail(e.target.value)}
               required
               style={styles.input}
-              onFocus={e => e.target.style.borderColor = '#22c55e'}
-              onBlur={e => e.target.style.borderColor = '#2d2d2d'}
+              onFocus={e  => e.target.style.borderColor = '#22c55e'}
+              onBlur={e   => e.target.style.borderColor = '#2d2d2d'}
             />
           </div>
           <div style={styles.fieldGroup}>
@@ -91,8 +84,8 @@ const Login = () => {
               onChange={(e) => setPassword(e.target.value)}
               required
               style={styles.input}
-              onFocus={e => e.target.style.borderColor = '#22c55e'}
-              onBlur={e => e.target.style.borderColor = '#2d2d2d'}
+              onFocus={e  => e.target.style.borderColor = '#22c55e'}
+              onBlur={e   => e.target.style.borderColor = '#2d2d2d'}
             />
           </div>
           <button
@@ -155,127 +148,43 @@ const styles = {
     width: '100%',
     maxWidth: '400px',
   },
-  logoRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    marginBottom: '8px',
-  },
+  logoRow:  { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' },
   logoIcon: {
-    width: '36px',
-    height: '36px',
-    background: '#22c55e',
-    borderRadius: '10px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: '#000',
-    fontSize: '18px',
-    fontWeight: '700',
+    width: '36px', height: '36px', background: '#22c55e', borderRadius: '10px',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    color: '#000', fontSize: '18px', fontWeight: '700',
   },
-  logoText: {
-    color: '#fff',
-    fontSize: '20px',
-    fontWeight: '700',
-    letterSpacing: '-0.3px',
-  },
-  subtitle: {
-    color: '#6b7280',
-    fontSize: '14px',
-    marginBottom: '28px',
-  },
+  logoText:  { color: '#fff', fontSize: '20px', fontWeight: '700', letterSpacing: '-0.3px' },
+  subtitle:  { color: '#6b7280', fontSize: '14px', marginBottom: '28px' },
   errorBox: {
-    background: 'rgba(239,68,68,0.1)',
-    border: '1px solid rgba(239,68,68,0.3)',
-    color: '#f87171',
-    borderRadius: '8px',
-    padding: '12px 14px',
-    fontSize: '13px',
-    marginBottom: '20px',
+    background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+    color: '#f87171', borderRadius: '8px', padding: '12px 14px',
+    fontSize: '13px', marginBottom: '20px',
   },
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-  },
-  fieldGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
-  },
-  label: {
-    color: '#9ca3af',
-    fontSize: '13px',
-    fontWeight: '500',
-  },
+  form:       { display: 'flex', flexDirection: 'column', gap: '16px' },
+  fieldGroup: { display: 'flex', flexDirection: 'column', gap: '6px' },
+  label:      { color: '#9ca3af', fontSize: '13px', fontWeight: '500' },
   input: {
-    background: '#111',
-    border: '1px solid #2d2d2d',
-    borderRadius: '8px',
-    padding: '11px 14px',
-    color: '#fff',
-    fontSize: '14px',
-    outline: 'none',
-    transition: 'border-color 0.2s',
-    width: '100%',
-    boxSizing: 'border-box',
+    background: '#111', border: '1px solid #2d2d2d', borderRadius: '8px',
+    padding: '11px 14px', color: '#fff', fontSize: '14px', outline: 'none',
+    transition: 'border-color 0.2s', width: '100%', boxSizing: 'border-box',
   },
   primaryBtn: {
-    background: '#22c55e',
-    color: '#000',
-    border: 'none',
-    borderRadius: '8px',
-    padding: '12px',
-    fontWeight: '600',
-    fontSize: '14px',
-    cursor: 'pointer',
-    transition: 'background 0.2s',
-    marginTop: '4px',
+    background: '#22c55e', color: '#000', border: 'none', borderRadius: '8px',
+    padding: '12px', fontWeight: '600', fontSize: '14px', cursor: 'pointer',
+    transition: 'background 0.2s', marginTop: '4px',
   },
-  divider: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    margin: '24px 0',
-  },
-  dividerLine: {
-    flex: 1,
-    height: '1px',
-    background: '#2d2d2d',
-  },
-  dividerText: {
-    color: '#4b5563',
-    fontSize: '12px',
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px',
-  },
+  divider:     { display: 'flex', alignItems: 'center', gap: '12px', margin: '24px 0' },
+  dividerLine: { flex: 1, height: '1px', background: '#2d2d2d' },
+  dividerText: { color: '#4b5563', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' },
   googleBtn: {
-    background: '#fff',
-    color: '#111',
-    border: 'none',
-    borderRadius: '8px',
-    padding: '11px 14px',
-    fontWeight: '600',
-    fontSize: '14px',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '10px',
-    width: '100%',
-    transition: 'background 0.2s',
+    background: '#fff', color: '#111', border: 'none', borderRadius: '8px',
+    padding: '11px 14px', fontWeight: '600', fontSize: '14px', cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    gap: '10px', width: '100%', transition: 'background 0.2s',
   },
-  footerText: {
-    color: '#6b7280',
-    fontSize: '13px',
-    textAlign: 'center',
-    marginTop: '24px',
-  },
-  link: {
-    color: '#22c55e',
-    textDecoration: 'none',
-    fontWeight: '500',
-  },
+  footerText: { color: '#6b7280', fontSize: '13px', textAlign: 'center', marginTop: '24px' },
+  link:       { color: '#22c55e', textDecoration: 'none', fontWeight: '500' },
 };
 
 export default Login;

@@ -5,8 +5,15 @@ const isAdmin = require('../middleware/isAdmin');
 const upload = require('../middleware/upload');
 const songsController = require('../controllers/songs.controller');
 
+// Public routes
 router.get('/', songsController.getAllSongs);
-router.post('/', verifyToken, isAdmin,
+router.get('/:id', songsController.getSongById); // FIX: was missing — broke Player page
+
+// Admin-only routes
+router.post(
+  '/',
+  verifyToken,
+  isAdmin,
   upload.fields([{ name: 'song' }, { name: 'cover' }]),
   songsController.uploadSong
 );

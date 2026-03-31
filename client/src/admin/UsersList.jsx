@@ -3,6 +3,16 @@ import axiosInstance from '../utils/axiosInstance';
 import Navbar from '../components/Navbar';
 import Loader from '../components/Loader';
 
+// FIX: createdAt is now an ISO string (serialized server-side in users.controller.js).
+// Previously tried to call .toDate() on it, which always returned undefined on
+// API responses (Firestore Timestamps don't survive JSON serialization).
+const formatDate = (raw) => {
+  if (!raw) return '—';
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
 const UsersList = () => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -10,7 +20,7 @@ const UsersList = () => {
   const [focused, setFocused] = useState(false);
 
   useEffect(() => {
-    const fetch = async () => {
+    const fetchUsers = async () => {
       try {
         const res = await axiosInstance.get('/api/users');
         setUsers(res.data);
@@ -19,7 +29,7 @@ const UsersList = () => {
       }
       setLoading(false);
     };
-    fetch();
+    fetchUsers();
   }, []);
 
   const filtered = users.filter(u =>
@@ -38,7 +48,6 @@ const UsersList = () => {
           <p style={styles.subheading}>{users.length} registered accounts</p>
         </div>
 
-        {/* Search */}
         <div style={{ ...styles.searchWrap, borderColor: focused ? '#22c55e' : '#2d2d2d' }}>
           <svg width="16" height="16" viewBox="0 0 20 20" fill="none" style={{ flexShrink: 0 }}>
             <circle cx="8.5" cy="8.5" r="5.5" stroke={focused ? '#22c55e' : '#6b7280'} strokeWidth="1.5"/>
@@ -85,10 +94,9 @@ const UsersList = () => {
                     {user.role || 'user'}
                   </span>
                 </div>
+                {/* FIX: Use formatDate() instead of .toDate() — API returns ISO strings */}
                 <span style={{ flex: 1, color: '#6b7280', fontSize: '12px' }}>
-                  {user.createdAt?.toDate
-                    ? user.createdAt.toDate().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-                    : '—'}
+                  {formatDate(user.createdAt)}
                 </span>
               </div>
             ))}
@@ -100,128 +108,39 @@ const UsersList = () => {
 };
 
 const styles = {
-  page: {
-    minHeight: '100vh',
-    background: '#0f0f0f',
-    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
-  },
-  container: {
-    maxWidth: '900px',
-    margin: '0 auto',
-    padding: '32px 20px 80px',
-  },
+  page: { minHeight: '100vh', background: '#0f0f0f', fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif" },
+  container: { maxWidth: '900px', margin: '0 auto', padding: '32px 20px 80px' },
   pageHeader: { marginBottom: '24px' },
-  heading: {
-    color: '#fff',
-    fontSize: '22px',
-    fontWeight: '700',
-    letterSpacing: '-0.3px',
-    marginBottom: '4px',
-  },
+  heading: { color: '#fff', fontSize: '22px', fontWeight: '700', letterSpacing: '-0.3px', marginBottom: '4px' },
   subheading: { color: '#6b7280', fontSize: '13px' },
-
   searchWrap: {
-    display: 'flex',
-    alignItems: 'center',
-    background: '#1a1a1a',
-    border: '1px solid #2d2d2d',
-    borderRadius: '8px',
-    padding: '0 12px',
-    gap: '10px',
-    maxWidth: '360px',
-    marginBottom: '20px',
-    transition: 'border-color 0.2s',
+    display: 'flex', alignItems: 'center', background: '#1a1a1a',
+    border: '1px solid #2d2d2d', borderRadius: '8px', padding: '0 12px',
+    gap: '10px', maxWidth: '360px', marginBottom: '20px', transition: 'border-color 0.2s',
   },
   searchInput: {
-    flex: 1,
-    background: 'transparent',
-    border: 'none',
-    outline: 'none',
-    color: '#fff',
-    fontSize: '13px',
-    padding: '10px 0',
-    fontFamily: 'inherit',
+    flex: 1, background: 'transparent', border: 'none', outline: 'none',
+    color: '#fff', fontSize: '13px', padding: '10px 0', fontFamily: 'inherit',
   },
-
   noResults: { color: '#6b7280', fontSize: '14px' },
-
-  table: {
-    background: '#1a1a1a',
-    border: '1px solid #2d2d2d',
-    borderRadius: '12px',
-    overflow: 'hidden',
-  },
+  table: { background: '#1a1a1a', border: '1px solid #2d2d2d', borderRadius: '12px', overflow: 'hidden' },
   tableHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    padding: '10px 16px',
-    borderBottom: '1px solid #2d2d2d',
+    display: 'flex', alignItems: 'center', gap: '12px',
+    padding: '10px 16px', borderBottom: '1px solid #2d2d2d',
   },
-  col: {
-    color: '#4b5563',
-    fontSize: '11px',
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px',
-  },
-  tableRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    padding: '12px 16px',
-    borderBottom: '1px solid #1f1f1f',
-  },
-  userCell: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    minWidth: 0,
-  },
+  col: { color: '#4b5563', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' },
+  tableRow: { display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderBottom: '1px solid #1f1f1f' },
+  userCell: { display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 },
   avatar: {
-    width: '34px',
-    height: '34px',
-    background: '#2d2d2d',
-    borderRadius: '8px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: '#9ca3af',
-    fontSize: '13px',
-    fontWeight: '700',
-    flexShrink: 0,
+    width: '34px', height: '34px', background: '#2d2d2d', borderRadius: '8px',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    color: '#9ca3af', fontSize: '13px', fontWeight: '700', flexShrink: 0,
   },
-  userName: {
-    color: '#fff',
-    fontSize: '13px',
-    fontWeight: '500',
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-  },
-  userEmail: {
-    color: '#6b7280',
-    fontSize: '11px',
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-  },
-  badge: {
-    borderRadius: '4px',
-    padding: '2px 8px',
-    fontSize: '11px',
-    fontWeight: '500',
-  },
-  badgeAdmin: {
-    background: 'rgba(34,197,94,0.1)',
-    color: '#22c55e',
-    border: '1px solid rgba(34,197,94,0.2)',
-  },
-  badgeUser: {
-    background: '#2d2d2d',
-    color: '#9ca3af',
-    border: '1px solid transparent',
-  },
+  userName: { color: '#fff', fontSize: '13px', fontWeight: '500', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  userEmail: { color: '#6b7280', fontSize: '11px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  badge: { borderRadius: '4px', padding: '2px 8px', fontSize: '11px', fontWeight: '500' },
+  badgeAdmin: { background: 'rgba(34,197,94,0.1)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.2)' },
+  badgeUser: { background: '#2d2d2d', color: '#9ca3af', border: '1px solid transparent' },
 };
 
 export default UsersList;
