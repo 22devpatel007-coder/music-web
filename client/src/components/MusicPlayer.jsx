@@ -50,12 +50,20 @@ const MusicPlayer = () => {
     <>
       <style>{`
         .player-bar { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+
+        /* ── Desktop: 3-column grid ── */
         .player-inner {
-          display: grid; grid-template-columns: 1fr auto 1fr;
-          align-items: center; gap: 16px;
-          max-width: 1200px; margin: 0 auto;
-          padding: 0 20px; height: 72px;
+          display: grid;
+          grid-template-columns: 1fr auto 1fr;
+          align-items: center;
+          gap: 16px;
+          max-width: 1200px;
+          margin: 0 auto;
+          padding: 0 20px;
+          height: 72px;
         }
+
+        /* ── Range input base ── */
         input[type=range].player-range {
           -webkit-appearance: none; appearance: none;
           height: 3px; background: transparent; outline: none; cursor: pointer;
@@ -64,22 +72,81 @@ const MusicPlayer = () => {
           height: 3px; border-radius: 2px;
           background: linear-gradient(to right, #22c55e var(--pct, 0%), #3d3d3d var(--pct, 0%));
         }
+        input[type=range].player-range::-moz-range-progress { height: 3px; background: #22c55e; border-radius: 2px; }
+        input[type=range].player-range::-moz-range-track { height: 3px; background: #3d3d3d; border-radius: 2px; }
         input[type=range].player-range::-webkit-slider-thumb {
           -webkit-appearance: none; width: 12px; height: 12px;
           border-radius: 50%; background: #fff; margin-top: -4.5px;
           box-shadow: 0 1px 4px rgba(0,0,0,0.5); transition: transform 0.15s;
         }
         input[type=range].player-range:hover::-webkit-slider-thumb { transform: scale(1.25); }
-        .ctrl-btn { background: none; border: none; cursor: pointer; color: #9ca3af; padding: 6px; border-radius: 6px; display: flex; align-items: center; justify-content: center; transition: color 0.15s; }
+
+        /* ── Buttons ── */
+        .ctrl-btn {
+          background: none; border: none; cursor: pointer;
+          color: #9ca3af; padding: 6px; border-radius: 6px;
+          display: flex; align-items: center; justify-content: center;
+          transition: color 0.15s; flex-shrink: 0;
+        }
         .ctrl-btn:hover { color: #fff; }
         .ctrl-btn.active { color: #22c55e; }
-        .play-btn { width: 38px; height: 38px; background: #22c55e; border: none; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.15s, transform 0.15s; flex-shrink: 0; }
+        .play-btn {
+          width: 38px; height: 38px; background: #22c55e;
+          border: none; border-radius: 50%; cursor: pointer;
+          display: flex; align-items: center; justify-content: center;
+          transition: background 0.15s, transform 0.15s; flex-shrink: 0;
+        }
         .play-btn:hover { background: #16a34a; transform: scale(1.06); }
-        @media (max-width: 900px) { .player-vol { display: none !important; } .player-inner { grid-template-columns: 1fr auto; } }
-        @media (max-width: 640px) { .player-inner { grid-template-columns: 1fr; height: auto; padding: 10px 16px; gap: 10px; } .player-vol { display: none !important; } .time-label { display: none; } }
+
+        /* ── Tablet: hide vol slider, keep queue+mini ── */
+        @media (max-width: 900px) {
+          .player-inner { grid-template-columns: 1fr auto; }
+          .player-vol { display: none !important; }
+          .player-side-btns { display: flex !important; }
+        }
+
+        /* ── Mobile: single-row layout ── */
+        @media (max-width: 640px) {
+          .player-inner {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            height: 64px;
+            padding: 0 12px;
+            gap: 0;
+          }
+          /* Song info takes all available space */
+          .player-song-info {
+            flex: 1;
+            min-width: 0;
+          }
+          /* Controls: show only prev/play/next, centered */
+          .player-controls {
+            display: flex !important;
+            align-items: center;
+            gap: 2px;
+            flex-shrink: 0;
+          }
+          /* Hide shuffle, repeat, time on mobile */
+          .hide-mobile { display: none !important; }
+          /* Hide vol entirely */
+          .player-vol { display: none !important; }
+          /* Show minimal side buttons (queue + mini) */
+          .player-side-btns { display: flex !important; align-items: center; gap: 2px; flex-shrink: 0; margin-left: 4px; }
+        }
 
         /* Queue drawer */
-        .queue-drawer { position: fixed; bottom: 75px; right: 16px; width: 320px; max-height: 420px; background: #1a1a1a; border: 1px solid #2d2d2d; border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; z-index: 60; box-shadow: 0 16px 48px rgba(0,0,0,0.6); }
+        .queue-drawer {
+          position: fixed; bottom: 68px; right: 16px;
+          width: 300px; max-height: 400px;
+          background: #1a1a1a; border: 1px solid #2d2d2d;
+          border-radius: 14px; overflow: hidden;
+          display: flex; flex-direction: column;
+          z-index: 60; box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+        }
+        @media (max-width: 640px) {
+          .queue-drawer { left: 8px; right: 8px; width: auto; bottom: 72px; }
+        }
         .queue-header { padding: 14px 16px; border-bottom: 1px solid #2d2d2d; display: flex; justify-content: space-between; align-items: center; }
         .queue-list { overflow-y: auto; flex: 1; scrollbar-width: thin; scrollbar-color: #2d2d2d transparent; }
         .queue-item { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid #1f1f1f; cursor: pointer; transition: background 0.15s; }
@@ -123,7 +190,7 @@ const MusicPlayer = () => {
 
         <div className="player-inner">
           {/* Song info */}
-          <div style={styles.songInfo}>
+          <div className="player-song-info" style={styles.songInfo}>
             <img src={currentSong.coverUrl} alt={currentSong.title} style={styles.cover} onError={e => { e.target.src = 'https://placehold.co/48x48/111/555?text=♪'; }} />
             <div style={styles.songText}>
               <p style={styles.songTitle}>{currentSong.title}</p>
@@ -132,21 +199,27 @@ const MusicPlayer = () => {
           </div>
 
           {/* Controls */}
-          <div style={styles.controls}>
-            <button className={`ctrl-btn${shuffle ? ' active' : ''}`} onClick={toggleShuffle} title="Shuffle"><ShuffleIcon /></button>
+          <div className="player-controls" style={styles.controls}>
+            <button className={`ctrl-btn hide-mobile${shuffle ? ' active' : ''}`} onClick={toggleShuffle} title="Shuffle"><ShuffleIcon /></button>
             <button className="ctrl-btn" onClick={playPrev} title="Previous"><PrevIcon /></button>
             <button className="play-btn" onClick={togglePlay}>{isPlaying ? <PauseIcon /> : <PlayIcon />}</button>
             <button className="ctrl-btn" onClick={playNext} title="Next"><NextIcon /></button>
-            <button className={`ctrl-btn${repeat !== 'none' ? ' active' : ''}`} onClick={cycleRepeat} title={`Repeat: ${repeat}`}>
+            <button className={`ctrl-btn hide-mobile${repeat !== 'none' ? ' active' : ''}`} onClick={cycleRepeat} title={`Repeat: ${repeat}`}>
               {repeat === 'one' ? <RepeatOneIcon /> : <RepeatIcon />}
             </button>
-            <span className="time-label" style={styles.timeLabel}>{fmt(progress)} / {fmt(duration)}</span>
+            <span className="time-label hide-mobile" style={styles.timeLabel}>{fmt(progress)} / {fmt(duration)}</span>
           </div>
 
-          {/* Vol + queue + mini */}
+          {/* Vol + queue + mini — desktop */}
           <div className="player-vol" style={styles.vol}>
             <VolumeIcon volume={volume} />
             <input type="range" className="player-range" min="0" max="1" step="0.01" value={volume} onChange={handleVolume} style={{ '--pct': `${volume * 100}%`, width: '80px' }} />
+            <button className={`ctrl-btn${showQueue ? ' active' : ''}`} onClick={toggleQueue} title="Queue"><QueueIcon /></button>
+            <button className="ctrl-btn" onClick={() => setMini(true)} title="Minimize"><ChevronDownIcon /></button>
+          </div>
+
+          {/* Queue + mini — mobile only */}
+          <div className="player-side-btns" style={{ display: 'none' }}>
             <button className={`ctrl-btn${showQueue ? ' active' : ''}`} onClick={toggleQueue} title="Queue"><QueueIcon /></button>
             <button className="ctrl-btn" onClick={() => setMini(true)} title="Minimize"><ChevronDownIcon /></button>
           </div>

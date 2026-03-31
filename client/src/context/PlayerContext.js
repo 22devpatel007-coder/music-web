@@ -102,6 +102,18 @@ export const PlayerProvider = ({ children }) => {
     });
   }, [isMuted, volume, addToRecentlyPlayed, incrementPlayCount]);
 
+  // Stop player on logout
+  useEffect(() => {
+    if (!currentUser) {
+      audioRef.current.pause();
+      audioRef.current.src = '';
+      setCurrentSong(null);
+      setIsPlaying(false);
+      setSongs([]);
+      setRecentlyPlayed([]);
+    }
+  }, [currentUser]);
+
   // Auto-advance on end
   useEffect(() => {
     const audio = audioRef.current;

@@ -1,38 +1,37 @@
 import axios from 'axios';
 import { auth } from '../firebase';
 
+// ─── Create instance ──────────────────────────────────────────────────────────
 const axiosInstance = axios.create({
   baseURL: process.env.REACT_APP_API_URL,
+  timeout: 15000, // 15s — prevents hanging requests
 });
 
-// Get a guaranteed fresh token by checking expiry manually
+// ─── Token refresh helper ─────────────────────────────────────────────────────
+// Returns a fresh Firebase ID token.
+// Proactively refreshes if token expires within 5 minutes.
+// Falls back to force-refresh on any error.
 const getFreshToken = async () => {
   const user = auth.currentUser;
   if (!user) return null;
 
   try {
-    // getIdTokenResult gives us expiry info without a network call
     const tokenResult = await user.getIdTokenResult(false);
-    const expiry = new Date(tokenResult.expirationTime).getTime();
-    const now = Date.now();
-    const tenMinutes = 10 * 60 * 1000;
+    const expiresAt   = new Date(tokenResult.expirationTime).getTime();
+    const msLeft      = expiresAt - Date.now();
+    const THRESHOLD   = 5 * 60 * 1000; // 5 minutes
 
-    console.log('Token expiry:', tokenResult.expirationTime);
-    console.log('Time now:', new Date().toISOString());
-    console.log('Minutes until expiry:', Math.round((expiry - now) / 60000));
-
-    // If token expires within 10 minutes or is already expired, force refresh
-    const needsRefresh = expiry - now < tenMinutes;
-    const token = await user.getIdToken(needsRefresh);
-    console.log('Force refresh used:', needsRefresh);
-    return token;
-  } catch (err) {
-    console.error('getIdTokenResult failed, forcing refresh:', err.message);
-    // Last resort — force refresh
+    // Proactively refresh if expiring soon
+    const needsRefresh = msLeft < THRESHOLD;
+    return await user.getIdToken(needsRefresh);
+  } catch {
+    // getIdTokenResult failed (rare) — force a network refresh
     return await user.getIdToken(true);
   }
 };
 
+// ─── Request interceptor ──────────────────────────────────────────────────────
+// Attaches a fresh Bearer token to every outgoing request.
 axiosInstance.interceptors.request.use(
   async (config) => {
     try {
@@ -41,39 +40,53 @@ axiosInstance.interceptors.request.use(
         config.headers.Authorization = `Bearer ${token}`;
       }
     } catch (err) {
-      console.error('Token fetch error:', err.message);
+      // Log but don't block the request — server will reject with 401 if needed
+      console.error('[axiosInstance] Could not attach token:', err.message);
     }
     return config;
   },
   (error) => Promise.reject(error)
 );
 
+// ─── Response interceptor ─────────────────────────────────────────────────────
+// On 401: force-refresh the token once and retry the original request.
+// If the retry also fails (e.g. account deleted, clock skew), sign out cleanly.
 axiosInstance.interceptors.response.use(
   (response) => response,
+
   async (error) => {
     const originalRequest = error.config;
-    const errorCode = error.response?.data?.code;
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
-
-      // Token is expired even after our proactive refresh — clock skew or cache issue
-      // Sign out completely to clear Firebase's cached token, then redirect to login
-      console.error('Token still expired after refresh. Signing out to clear cache.');
-      console.error('This usually means your system clock is out of sync.');
-      console.error('Fix: Windows Settings → Time & Language → Sync now');
-
-      try {
-        await auth.signOut();
-      } catch (e) {
-        // ignore signout errors
-      }
-
-      // Redirect to login — user must log in again to get a fresh token
-      window.location.href = '/login';
+    // Only handle 401s, and only retry once per request
+    if (error.response?.status !== 401 || originalRequest._retry) {
+      return Promise.reject(error);
     }
 
-    return Promise.reject(error);
+    originalRequest._retry = true;
+
+    try {
+      // Force a network refresh — bypasses Firebase's local cache entirely
+      const user = auth.currentUser;
+      if (!user) throw new Error('No user');
+
+      const freshToken = await user.getIdToken(true);
+      originalRequest.headers.Authorization = `Bearer ${freshToken}`;
+
+      // Retry the original request with the new token
+      return await axiosInstance(originalRequest);
+
+    } catch (refreshError) {
+      // Refresh failed — token is unrecoverable.
+      // Sign out and redirect to login so the user gets a clean session.
+      console.error('[axiosInstance] Token refresh failed, signing out:', refreshError.message);
+
+      try { await auth.signOut(); } catch { /* ignore signout errors */ }
+
+      // Use replace so the user can't "back" into an authenticated page
+      window.location.replace('/login');
+
+      return Promise.reject(refreshError);
+    }
   }
 );
 
