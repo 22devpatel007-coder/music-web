@@ -32,6 +32,13 @@ const Home = () => {
   useEffect(() => {
     const fetchFeatured = async () => {
       try {
+        // PERMANENT FIX: This query requires a composite index on
+        // (isFeatured ASC, isPublic ASC, createdAt DESC).
+        // The index is defined in firestore.indexes.json — deploy it with:
+        //   firebase deploy --only firestore:indexes
+        //
+        // If the index is still being built, this catches the error silently
+        // so the rest of the home page still loads normally.
         const q = query(
           collection(db, 'playlists'),
           where('isFeatured', '==', true),
@@ -41,7 +48,15 @@ const Home = () => {
         const snap = await getDocs(q);
         setFeaturedPlaylists(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       } catch (err) {
-        console.error('[Home] featured playlists:', err.message);
+        if (err.code === 'failed-precondition' || err.message?.includes('index')) {
+          // Index not yet built — fail silently, section simply won't render
+          console.warn(
+            '[Home] Featured playlists index not ready. Deploy firestore.indexes.json:\n' +
+            '  firebase deploy --only firestore:indexes'
+          );
+        } else {
+          console.error('[Home] featured playlists:', err.message);
+        }
       }
     };
     fetchFeatured();
@@ -114,7 +129,7 @@ const Home = () => {
           </div>
         )}
 
-        {/* Featured Playlists */}
+        {/* Featured Playlists — only rendered once index is ready and data exists */}
         {featuredPlaylists.length > 0 && (
           <div style={styles.section}>
             <h2 style={styles.sectionTitle}>
@@ -182,7 +197,6 @@ const styles = {
     letterSpacing: '-0.3px', marginBottom: '4px',
   },
   subheading: { color: '#6b7280', fontSize: '13px' },
-
   section: { marginBottom: '28px' },
   sectionTitle: {
     display: 'flex', alignItems: 'center',
@@ -211,10 +225,7 @@ const styles = {
     color: '#6b7280', fontSize: '11px',
     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
   },
-
-  pillsRow: {
-    display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '24px',
-  },
+  pillsRow: { display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '24px' },
   pill: {
     background: '#1a1a1a', border: '1px solid #2d2d2d',
     color: '#9ca3af', borderRadius: '20px', padding: '6px 14px',
@@ -222,8 +233,7 @@ const styles = {
     transition: 'all 0.15s', fontFamily: 'inherit',
   },
   pillActive: {
-    background: 'rgba(34,197,94,0.1)', borderColor: '#22c55e',
-    color: '#22c55e',
+    background: 'rgba(34,197,94,0.1)', borderColor: '#22c55e', color: '#22c55e',
   },
 };
 
