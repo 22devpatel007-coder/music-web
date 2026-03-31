@@ -107,6 +107,7 @@ const Navbar = () => {
             <Link to="/home" className={`nav-link${isActive('/home') ? ' active' : ''}`}>Home</Link>
             <Link to="/search" className={`nav-link${isActive('/search') ? ' active' : ''}`}>Search</Link>
             <Link to="/liked" className={`nav-link${isActive('/liked') ? ' active' : ''}`}>Liked</Link>
+            <Link to="/playlists" className={`nav-link${location.pathname.startsWith('/playlists') ? ' active' : ''}`}>Playlists</Link>
             {isAdmin && (
               <Link to="/admin" className={`nav-link${location.pathname.startsWith('/admin') ? ' active' : ''}`}>Admin</Link>
             )}
@@ -148,6 +149,7 @@ const Navbar = () => {
           <Link to="/home" className={`mobile-nav-link${isActive('/home') ? ' active' : ''}`} onClick={() => setMenuOpen(false)}>Home</Link>
           <Link to="/search" className={`mobile-nav-link${isActive('/search') ? ' active' : ''}`} onClick={() => setMenuOpen(false)}>Search</Link>
           <Link to="/liked" className={`mobile-nav-link${isActive('/liked') ? ' active' : ''}`} onClick={() => setMenuOpen(false)}>Liked</Link>
+          <Link to="/playlists" className={`mobile-nav-link${location.pathname.startsWith('/playlists') ? ' active' : ''}`} onClick={() => setMenuOpen(false)}>Playlists</Link>
           {isAdmin && (
             <Link to="/admin" className={`mobile-nav-link${location.pathname.startsWith('/admin') ? ' active' : ''}`} onClick={() => setMenuOpen(false)}>Admin</Link>
           )}

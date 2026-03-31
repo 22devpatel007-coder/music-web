@@ -1,4 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
+import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
+import { db } from '../firebase';
 import axiosInstance from '../utils/axiosInstance';
 import Navbar from '../components/Navbar';
 import SongList from '../components/SongList';
@@ -10,6 +13,7 @@ const Home = () => {
   const [songs, setSongs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeGenre, setActiveGenre] = useState('All');
+  const [featuredPlaylists, setFeaturedPlaylists] = useState([]);
   const { recentlyPlayed, playSong } = usePlayer();
 
   useEffect(() => {
@@ -23,6 +27,24 @@ const Home = () => {
       setLoading(false);
     };
     fetchSongs();
+  }, []);
+
+  useEffect(() => {
+    const fetchFeatured = async () => {
+      try {
+        const q = query(
+          collection(db, 'playlists'),
+          where('isFeatured', '==', true),
+          where('isPublic',   '==', true),
+          orderBy('createdAt', 'desc')
+        );
+        const snap = await getDocs(q);
+        setFeaturedPlaylists(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      } catch (err) {
+        console.error('[Home] featured playlists:', err.message);
+      }
+    };
+    fetchFeatured();
   }, []);
 
   const genres = useMemo(() => {
@@ -87,6 +109,33 @@ const Home = () => {
                     <p style={styles.recentArtist}>{song.artist}</p>
                   </div>
                 </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Featured Playlists */}
+        {featuredPlaylists.length > 0 && (
+          <div style={styles.section}>
+            <h2 style={styles.sectionTitle}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6 }}>
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+              </svg>
+              Featured Playlists
+            </h2>
+            <div style={styles.recentScroll}>
+              {featuredPlaylists.map(pl => (
+                <Link key={pl.id} to={`/playlists/${pl.id}`} style={{ ...styles.recentChip, textDecoration: 'none' }}>
+                  {pl.coverUrl
+                    ? <img src={pl.coverUrl} alt={pl.name} style={styles.recentCover}
+                        onError={e => { e.target.src = 'https://placehold.co/36x36/1a1a1a/555?text=♪'; }} />
+                    : <div style={{ ...styles.recentCover, background: '#2d2d2d', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4b5563', fontSize: 14 }}>♪</div>
+                  }
+                  <div style={styles.recentInfo}>
+                    <p style={styles.recentTitle}>{pl.name}</p>
+                    <p style={styles.recentArtist}>{pl.songIds?.length || 0} songs</p>
+                  </div>
+                </Link>
               ))}
             </div>
           </div>

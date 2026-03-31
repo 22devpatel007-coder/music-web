@@ -6,6 +6,7 @@ const MusicPlayer = () => {
     currentSong, isPlaying, togglePlay, playNext, playPrev, audioRef,
     repeat, cycleRepeat, shuffle, toggleShuffle,
     songs, removeFromQueue, showQueue, toggleQueue,
+    playingPlaylistName,
   } = usePlayer();
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -245,6 +246,11 @@ const MusicPlayer = () => {
             <div style={styles.songText}>
               <p style={styles.songTitle}>{currentSong.title}</p>
               <p style={styles.songArtist}>{currentSong.artist}</p>
+              {playingPlaylistName && (
+                <p style={{ color: '#22c55e', fontSize: '10px', marginTop: 1 }}>
+                  From: {playingPlaylistName}
+                </p>
+              )}
             </div>
           </div>
 
