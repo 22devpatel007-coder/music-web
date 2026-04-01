@@ -5,19 +5,33 @@ import { doc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
 import { db } from "../firebase";
 import AddToPlaylist from "./AddToPlaylist";
 
+/**
+ * SongCard — now shows duration (mm:ss) in the card footer.
+ * Duration is displayed only when it exists and is > 0.
+ */
+
+const fmtDuration = (secs) => {
+  if (!secs && secs !== 0) return null;
+  const n = Number(secs);
+  if (isNaN(n) || n <= 0) return null;
+  const m = Math.floor(n / 60);
+  const s = Math.floor(n % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
+};
+
 const SongCard = ({ song, songList }) => {
   const { playSong, currentSong, isPlaying } = usePlayer();
   const { currentUser, likedSongs, setLikedSongs } = useAuth();
-  const [hovered, setHovered] = useState(false);
-  const [liking, setLiking] = useState(false);
-  const isActive = currentSong?.id === song.id;
-  const isLiked = likedSongs.includes(song.id);
+  const [hovered, setHovered]             = useState(false);
+  const [liking,  setLiking]              = useState(false);
+  const [showAddToPlaylist, setShowAdd]   = useState(false);
 
-  const [showAddToPlaylist, setShowAddToPlaylist] = useState(false);
+  const isActive = currentSong?.id === song.id;
+  const isLiked  = likedSongs.includes(song.id);
+  const dur      = fmtDuration(song.duration);
+
   const handlePlay = (e) => {
     e.stopPropagation();
-    // FIX: Removed the duplicate `updateDoc(ref, { playCount: increment(1) })` call
-    // that was here. Play count is now incremented exactly once inside PlayerContext.playSong().
     playSong(song, songList);
   };
 
@@ -47,22 +61,20 @@ const SongCard = ({ song, songList }) => {
       onMouseLeave={() => setHovered(false)}
       style={{
         ...styles.card,
-        outline: isActive ? "2px solid #22c55e" : "2px solid transparent",
+        outline:    isActive ? "2px solid #22c55e" : "2px solid transparent",
         background: hovered ? "#222" : "#1a1a1a",
         cursor: "pointer",
       }}
     >
+      {/* Cover image */}
       <div style={styles.imgWrap}>
         <img
-          src={
-            song.coverUrl || "https://placehold.co/200x200/1a1a1a/555?text=♪"
-          }
+          src={song.coverUrl || "https://placehold.co/200x200/1a1a1a/555?text=♪"}
           alt={song.title}
           style={styles.img}
-          onError={(e) => {
-            e.target.src = "https://placehold.co/200x200/1a1a1a/555?text=♪";
-          }}
+          onError={(e) => { e.target.src = "https://placehold.co/200x200/1a1a1a/555?text=♪"; }}
         />
+
         {/* Like button */}
         <button
           onClick={handleLike}
@@ -75,69 +87,64 @@ const SongCard = ({ song, songList }) => {
         >
           <HeartIcon filled={isLiked} />
         </button>
+
         {/* Add to playlist */}
         <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowAddToPlaylist(true);
-          }}
-          style={{
-            ...styles.menuBtn,
-            opacity: hovered ? 1 : 0,
-          }}
+          onClick={(e) => { e.stopPropagation(); setShowAdd(true); }}
+          style={{ ...styles.menuBtn, opacity: hovered ? 1 : 0 }}
           title="Add to playlist"
         >
           +
         </button>
+
         {/* Play overlay */}
-        <div
-          style={{
-            ...styles.overlay,
-            opacity: hovered || (isActive && isPlaying) ? 1 : 0,
-          }}
-        >
+        <div style={{ ...styles.overlay, opacity: hovered || (isActive && isPlaying) ? 1 : 0 }}>
           <div style={styles.playBtn}>
             {isActive && isPlaying ? (
               <svg width="20" height="20" viewBox="0 0 24 24" fill="#000">
-                <rect x="6" y="5" width="4" height="14" rx="1" />
-                <rect x="14" y="5" width="4" height="14" rx="1" />
+                <rect x="6" y="5" width="4" height="14" rx="1"/>
+                <rect x="14" y="5" width="4" height="14" rx="1"/>
               </svg>
             ) : (
               <svg width="20" height="20" viewBox="0 0 24 24" fill="#000">
-                <path d="M8 5.14v14l11-7-11-7z" />
+                <path d="M8 5.14v14l11-7-11-7z"/>
               </svg>
             )}
           </div>
         </div>
       </div>
+
+      {/* Info */}
       <div style={styles.info}>
         <p style={styles.title}>{song.title}</p>
         <p style={styles.artist}>{song.artist}</p>
-        <span style={styles.genre}>{song.genre}</span>
+        <div style={styles.footer}>
+          <span style={styles.genre}>{song.genre}</span>
+          {dur && <span style={styles.dur}>{dur}</span>}
+          {song.featured && (
+            <span style={styles.featuredBadge} title="Featured">⭐</span>
+          )}
+        </div>
       </div>
+
       {showAddToPlaylist && (
-        <AddToPlaylist
-          song={song}
-          onClose={() => setShowAddToPlaylist(false)}
-        />
+        <AddToPlaylist song={song} onClose={() => setShowAdd(false)} />
       )}
     </div>
   );
 };
 
+/* ── Icons ─────────────────────────────────────────────────────────────────── */
 const HeartIcon = ({ filled }) => (
-  <svg
-    width="16"
-    height="16"
-    viewBox="0 0 24 24"
+  <svg width="16" height="16" viewBox="0 0 24 24"
     fill={filled ? "currentColor" : "none"}
-    stroke="currentColor"
-    strokeWidth="2"
+    stroke="currentColor" strokeWidth="2"
   >
-    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
   </svg>
 );
 
+/* ── Styles ─────────────────────────────────────────────────────────────────── */
 const styles = {
   card: {
     background: "#1a1a1a",
@@ -147,102 +154,29 @@ const styles = {
     transition: "background 0.2s, outline 0.2s",
     fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
   },
-  imgWrap: {
-    position: "relative",
-    width: "100%",
-    paddingBottom: "100%",
-    background: "#111",
+  imgWrap:  { position: "relative", width: "100%", paddingBottom: "100%", background: "#111" },
+  img:      { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" },
+  likeBtn:  {
+    position: "absolute", top: 8, right: 8,
+    background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%",
+    width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center",
+    cursor: "pointer", transition: "opacity 0.2s, color 0.2s", zIndex: 2, backdropFilter: "blur(4px)",
   },
-  img: {
-    position: "absolute",
-    inset: 0,
-    width: "100%",
-    height: "100%",
-    objectFit: "cover",
-  },
-  likeBtn: {
-    position: "absolute",
-    top: "8px",
-    right: "8px",
-    background: "rgba(0,0,0,0.6)",
-    border: "none",
-    borderRadius: "50%",
-    width: "32px",
-    height: "32px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    cursor: "pointer",
-    transition: "opacity 0.2s, color 0.2s",
-    zIndex: 2,
-    backdropFilter: "blur(4px)",
-  },
-  overlay: {
-    position: "absolute",
-    inset: 0,
-    background: "rgba(0,0,0,0.45)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    transition: "opacity 0.2s",
-  },
-  playBtn: {
-    width: "44px",
-    height: "44px",
-    background: "#22c55e",
-    borderRadius: "50%",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    boxShadow: "0 4px 16px rgba(34,197,94,0.4)",
-  },
-  info: { padding: "12px 14px 14px" },
-  title: {
-    color: "#fff",
-    fontSize: "14px",
-    fontWeight: "600",
-    marginBottom: "3px",
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-  },
-  artist: {
-    color: "#6b7280",
-    fontSize: "12px",
-    marginBottom: "8px",
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-  },
-  genre: {
-    background: "rgba(34,197,94,0.1)",
-    color: "#22c55e",
-    border: "1px solid rgba(34,197,94,0.2)",
-    borderRadius: "4px",
-    padding: "2px 8px",
-    fontSize: "11px",
-    fontWeight: "500",
-  },
-  menuBtn: {
-    position: "absolute",
-    bottom: "8px",
-    left: "8px",
-    background: "rgba(0,0,0,0.6)",
-    border: "none",
-    borderRadius: "50%",
-    width: "30px",
-    height: "30px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    cursor: "pointer",
-    color: "#fff",
-    fontSize: "18px",
-    transition: "opacity 0.2s",
-    zIndex: 2,
-    backdropFilter: "blur(4px)",
-    fontFamily: "inherit",
-    lineHeight: 1,
+  overlay:  { position: "absolute", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", transition: "opacity 0.2s" },
+  playBtn:  { width: 44, height: 44, background: "#22c55e", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 16px rgba(34,197,94,0.4)" },
+  info:     { padding: "12px 14px 14px" },
+  title:    { color: "#fff", fontSize: 14, fontWeight: 600, marginBottom: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+  artist:   { color: "#6b7280", fontSize: 12, marginBottom: 8, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+  footer:   { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" },
+  genre:    { background: "rgba(34,197,94,0.1)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.2)", borderRadius: 4, padding: "2px 8px", fontSize: 11, fontWeight: 500 },
+  dur:      { color: "#4b5563", fontSize: 11 },
+  featuredBadge: { fontSize: 11, lineHeight: 1 },
+  menuBtn:  {
+    position: "absolute", bottom: 8, left: 8,
+    background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%",
+    width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center",
+    cursor: "pointer", color: "#fff", fontSize: 18, transition: "opacity 0.2s", zIndex: 2,
+    backdropFilter: "blur(4px)", fontFamily: "inherit", lineHeight: 1,
   },
 };
 
