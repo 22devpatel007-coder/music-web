@@ -12,9 +12,7 @@ const uploadToCloudinary = (buffer, options) =>
     streamifier.createReadStream(buffer).pipe(stream);
   });
 
-// ─── Serialize a Firestore doc to a plain JSON-safe object ───────────────────
-// Converts Firestore Timestamps → ISO strings so the client always gets
-// consistent data (no { _seconds, _nanoseconds } objects leaking through).
+// ─── Serialise a Firestore doc ────────────────────────────────────────────────
 function serializeSong(id, data) {
   return {
     id,
@@ -22,14 +20,17 @@ function serializeSong(id, data) {
     createdAt: data.createdAt?.toDate
       ? data.createdAt.toDate().toISOString()
       : data.createdAt ?? null,
+    updatedAt: data.updatedAt?.toDate
+      ? data.updatedAt.toDate().toISOString()
+      : data.updatedAt ?? null,
   };
 }
 
-// GET /api/songs
+// ─── GET /api/songs ───────────────────────────────────────────────────────────
 exports.getAllSongs = async (req, res) => {
   try {
     const snapshot = await db.collection('songs').orderBy('createdAt', 'desc').get();
-    const songs = snapshot.docs.map(doc => serializeSong(doc.id, doc.data()));
+    const songs = snapshot.docs.map((doc) => serializeSong(doc.id, doc.data()));
     res.json(songs);
   } catch (err) {
     console.error('getAllSongs error:', err.message);
@@ -37,7 +38,7 @@ exports.getAllSongs = async (req, res) => {
   }
 };
 
-// GET /api/songs/:id
+// ─── GET /api/songs/:id ───────────────────────────────────────────────────────
 exports.getSongById = async (req, res) => {
   try {
     const docSnap = await db.collection('songs').doc(req.params.id).get();
@@ -49,14 +50,12 @@ exports.getSongById = async (req, res) => {
   }
 };
 
-// POST /api/songs  (admin only)
+// ─── POST /api/songs (admin only) ────────────────────────────────────────────
 exports.uploadSong = async (req, res) => {
   try {
-    console.log('=== UPLOAD STARTED ===');
-
     const { title, artist, genre, duration } = req.body;
 
-    if (!req.files?.['song']?.[0]) return res.status(400).json({ error: 'No song file received' });
+    if (!req.files?.['song']?.[0])  return res.status(400).json({ error: 'No song file received' });
     if (!req.files?.['cover']?.[0]) return res.status(400).json({ error: 'No cover file received' });
 
     const songFile  = req.files['song'][0];
@@ -80,29 +79,100 @@ exports.uploadSong = async (req, res) => {
       title,
       artist,
       genre,
-      // FIX: lowercase index fields for case-insensitive Firestore search
-      titleLower:  title.toLowerCase(),
-      artistLower: artist.toLowerCase(),
-      duration: Number(duration),
-      fileUrl: songResult.secure_url,
-      coverUrl: coverResult.secure_url,
-      storagePath: songResult.public_id,
-      coverStoragePath: coverResult.public_id, // FIX: store cover path for deletion
-      playCount: 0,
-      uploadedBy: req.user.uid,
-      createdAt: new Date(),
+      titleLower:       title.toLowerCase(),
+      artistLower:      artist.toLowerCase(),
+      duration:         Number(duration) || 0,
+      fileUrl:          songResult.secure_url,
+      coverUrl:         coverResult.secure_url,
+      storagePath:      songResult.public_id,
+      coverStoragePath: coverResult.public_id,
+      playCount:        0,
+      featured:         false,          // NEW: featured flag
+      uploadedBy:       req.user.uid,
+      createdAt:        new Date(),
+      updatedAt:        new Date(),
     };
 
     const docRef = await db.collection('songs').add(songData);
-    console.log('=== UPLOAD SUCCESS ===', docRef.id);
     res.status(201).json(serializeSong(docRef.id, songData));
   } catch (err) {
-    console.error('=== UPLOAD ERROR ===', err.message);
+    console.error('uploadSong error:', err.message);
     res.status(500).json({ error: err.message });
   }
 };
 
-// DELETE /api/songs/:id  (admin only)
+// ─── PATCH /api/songs/:id (admin only) ───────────────────────────────────────
+// Handles two cases:
+//   1. Metadata-only update (JSON body): title, artist, genre, duration, featured
+//   2. Metadata + new cover image (multipart): same fields + cover file
+//
+// PERMANENT SOLUTION NOTES:
+// - Old Cloudinary cover is deleted only after the new one is uploaded
+//   successfully, preventing orphaned assets AND avoiding a window where
+//   the song has no cover.
+// - titleLower / artistLower are always re-derived from title / artist
+//   so the search index stays consistent.
+// - updatedAt is always set so clients can cache-bust.
+exports.updateSong = async (req, res) => {
+  try {
+    const docSnap = await db.collection('songs').doc(req.params.id).get();
+    if (!docSnap.exists) return res.status(404).json({ error: 'Song not found' });
+
+    const existing = docSnap.data();
+    const updates  = {};
+
+    // ── Scalar fields ─────────────────────────────────────────────────────────
+    const { title, artist, genre, duration, featured } = req.body;
+
+    if (title  !== undefined) {
+      updates.title       = String(title).trim();
+      updates.titleLower  = String(title).trim().toLowerCase();
+    }
+    if (artist !== undefined) {
+      updates.artist      = String(artist).trim();
+      updates.artistLower = String(artist).trim().toLowerCase();
+    }
+    if (genre    !== undefined) updates.genre    = String(genre).trim();
+    if (duration !== undefined) updates.duration = Number(duration) || 0;
+    if (featured !== undefined) updates.featured = Boolean(featured);
+
+    // ── Cover image replacement ───────────────────────────────────────────────
+    const coverFile = req.files?.['cover']?.[0];
+    if (coverFile) {
+      // Upload new cover first
+      const coverResult = await uploadToCloudinary(coverFile.buffer, {
+        resource_type: 'image',
+        folder: 'melostream/covers',
+        public_id: `${Date.now()}-${updates.title || existing.title}-cover`,
+      });
+
+      updates.coverUrl          = coverResult.secure_url;
+      updates.coverStoragePath  = coverResult.public_id;
+
+      // Delete old cover from Cloudinary (fire-and-forget — don't block response)
+      if (existing.coverStoragePath) {
+        cloudinary.uploader
+          .destroy(existing.coverStoragePath, { resource_type: 'image' })
+          .catch((err) =>
+            console.warn('[updateSong] Old cover deletion failed:', err.message)
+          );
+      }
+    }
+
+    updates.updatedAt = new Date();
+
+    await db.collection('songs').doc(req.params.id).update(updates);
+
+    // Return the full merged document
+    const merged = { ...existing, ...updates };
+    res.json(serializeSong(req.params.id, merged));
+  } catch (err) {
+    console.error('updateSong error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ─── DELETE /api/songs/:id (admin only) ──────────────────────────────────────
 exports.deleteSong = async (req, res) => {
   try {
     const docSnap = await db.collection('songs').doc(req.params.id).get();
@@ -110,7 +180,6 @@ exports.deleteSong = async (req, res) => {
 
     const { storagePath, coverStoragePath } = docSnap.data();
 
-    // Delete from Cloudinary in parallel (fire-and-forget errors — don't block deletion)
     await Promise.allSettled([
       storagePath
         ? cloudinary.uploader.destroy(storagePath, { resource_type: 'video' })

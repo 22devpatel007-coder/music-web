@@ -1,18 +1,42 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-// FIX: Use axiosUpload (5-min timeout) instead of axiosInstance (15s timeout).
-// Song uploads to Cloudinary can take 30-120s on slow connections.
 import { axiosUpload } from '../utils/axiosInstance';
 import Navbar from '../components/Navbar';
 
+/**
+ * UploadMusic — single song upload form.
+ *
+ * Duration accepts both:
+ *   - Plain seconds:  214
+ *   - mm:ss format:   3:34
+ * Both are normalised to integer seconds before sending to the server.
+ *
+ * PERMANENT SOLUTION: axiosUpload (5-min timeout) used for all uploads.
+ */
+
+/** Convert "3:34" → 214, "214" → 214, anything else → 0 */
+const parseDurationToSeconds = (raw) => {
+  const str = String(raw || '').trim();
+  if (!str) return 0;
+
+  // mm:ss
+  if (/^\d{1,3}:\d{2}$/.test(str)) {
+    const [m, s] = str.split(':').map(Number);
+    return m * 60 + s;
+  }
+  // plain integer
+  const n = parseInt(str, 10);
+  return isNaN(n) ? 0 : n;
+};
+
 const UploadMusic = () => {
   const [form, setForm] = useState({ title: '', artist: '', genre: '', duration: '' });
-  const [songFile, setSongFile] = useState(null);
+  const [songFile,  setSongFile]  = useState(null);
   const [coverFile, setCoverFile] = useState(null);
-  const [progress, setProgress] = useState(0);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [progress,  setProgress]  = useState(0);
+  const [error,     setError]     = useState('');
+  const [success,   setSuccess]   = useState('');
+  const [loading,   setLoading]   = useState(false);
   const navigate = useNavigate();
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
@@ -23,20 +47,22 @@ const UploadMusic = () => {
     setSuccess('');
     if (!songFile)  return setError('Please select an MP3 file.');
     if (!coverFile) return setError('Please select a cover image.');
+
+    const durationSecs = parseDurationToSeconds(form.duration);
+
     setLoading(true);
     try {
       const fd = new FormData();
-      fd.append('title',    form.title);
-      fd.append('artist',   form.artist);
-      fd.append('genre',    form.genre);
-      fd.append('duration', form.duration);
+      fd.append('title',    form.title.trim());
+      fd.append('artist',   form.artist.trim());
+      fd.append('genre',    form.genre.trim());
+      fd.append('duration', String(durationSecs));
       fd.append('song',     songFile);
       fd.append('cover',    coverFile);
 
       await axiosUpload.post('/api/songs', fd, {
-        onUploadProgress: (e) => {
-          setProgress(Math.round((e.loaded * 100) / e.total));
-        },
+        onUploadProgress: (ev) =>
+          setProgress(Math.round((ev.loaded * 100) / ev.total)),
       });
 
       setSuccess('Song uploaded successfully!');
@@ -46,7 +72,11 @@ const UploadMusic = () => {
       setCoverFile(null);
       setTimeout(() => navigate('/admin/songs'), 1500);
     } catch (err) {
-      setError(err.response?.data?.error || err.message || 'Upload failed. Please try again.');
+      setError(
+        err.response?.data?.error ||
+        err.message ||
+        'Upload failed. Please try again.'
+      );
     }
     setLoading(false);
   };
@@ -66,12 +96,19 @@ const UploadMusic = () => {
 
           <form onSubmit={handleSubmit} style={styles.form}>
             <div style={styles.row}>
-              <Field label="Song Title"   name="title"  placeholder="e.g. Blinding Lights" value={form.title}    onChange={handleChange} required />
-              <Field label="Artist Name"  name="artist" placeholder="e.g. The Weeknd"       value={form.artist}   onChange={handleChange} required />
+              <Field label="Song Title"  name="title"  placeholder="e.g. Blinding Lights" value={form.title}  onChange={handleChange} required />
+              <Field label="Artist Name" name="artist" placeholder="e.g. The Weeknd"       value={form.artist} onChange={handleChange} required />
             </div>
             <div style={styles.row}>
-              <Field label="Genre"                name="genre"    placeholder="Pop, Rock, Hip-Hop…" value={form.genre}    onChange={handleChange} required />
-              <Field label="Duration (seconds)"   name="duration" type="number" placeholder="e.g. 214" value={form.duration} onChange={handleChange} required />
+              <Field label="Genre" name="genre" placeholder="Pop, Rock, Hip-Hop…" value={form.genre} onChange={handleChange} required />
+              <Field
+                label="Duration  (mm:ss  or  seconds)"
+                name="duration"
+                placeholder="e.g. 3:34  or  214"
+                value={form.duration}
+                onChange={handleChange}
+                required
+              />
             </div>
 
             <FileField
@@ -112,6 +149,7 @@ const UploadMusic = () => {
   );
 };
 
+/* ── Sub-components ────────────────────────────────────────────────────────── */
 const Field = ({ label, name, type = 'text', placeholder, value, onChange, required }) => {
   const [focused, setFocused] = useState(false);
   return (
@@ -137,53 +175,39 @@ const FileField = ({ label, hint, accept, file, onChange }) => (
     <label style={styles.fileLabel}>
       <input type="file" accept={accept} onChange={onChange} style={{ display: 'none' }} />
       <span style={styles.fileBrowse}>Browse file</span>
-      <span style={styles.fileName}>{file ? `✓  ${file.name}` : 'No file selected'}</span>
+      <span style={styles.fileName}>
+        {file ? `✓  ${file.name}` : 'No file selected'}
+      </span>
     </label>
   </div>
 );
 
+/* ── Styles ────────────────────────────────────────────────────────────────── */
 const styles = {
-  page: { minHeight: '100vh', background: '#0f0f0f', fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif" },
-  container: { maxWidth: '680px', margin: '0 auto', padding: '32px 20px 80px' },
-  pageHeader: { marginBottom: '24px' },
-  heading: { color: '#fff', fontSize: '22px', fontWeight: '700', letterSpacing: '-0.3px', marginBottom: '4px' },
-  subheading: { color: '#6b7280', fontSize: '13px' },
-  card: { background: '#1a1a1a', border: '1px solid #2d2d2d', borderRadius: '14px', padding: '28px' },
-  errorBox: {
-    background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
-    color: '#f87171', borderRadius: '8px', padding: '12px 14px', fontSize: '13px', marginBottom: '20px',
-  },
-  successBox: {
-    background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)',
-    color: '#4ade80', borderRadius: '8px', padding: '12px 14px', fontSize: '13px', marginBottom: '20px',
-  },
-  form: { display: 'flex', flexDirection: 'column', gap: '18px' },
-  row: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px' },
-  fieldGroup: { display: 'flex', flexDirection: 'column', gap: '6px' },
-  label: { color: '#9ca3af', fontSize: '12px', fontWeight: '500' },
-  input: {
-    background: '#111', border: '1px solid #2d2d2d', borderRadius: '8px',
-    padding: '10px 12px', color: '#fff', fontSize: '14px', outline: 'none',
-    transition: 'border-color 0.2s', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit',
-  },
-  fileField: { background: '#111', border: '1px solid #2d2d2d', borderRadius: '8px', padding: '14px' },
-  fileTop: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' },
-  fileHint: { color: '#4b5563', fontSize: '11px' },
-  fileLabel: { display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' },
-  fileBrowse: {
-    background: '#2d2d2d', color: '#e5e7eb', borderRadius: '6px',
-    padding: '6px 14px', fontSize: '12px', fontWeight: '500', flexShrink: 0,
-  },
-  fileName: { color: '#6b7280', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  progressWrap: { display: 'flex', alignItems: 'center', gap: '10px' },
-  progressBar: { flex: 1, height: '4px', background: '#2d2d2d', borderRadius: '2px', overflow: 'hidden' },
-  progressFill: { height: '100%', background: '#22c55e', borderRadius: '2px', transition: 'width 0.2s' },
-  progressLabel: { color: '#22c55e', fontSize: '12px', fontWeight: '600', minWidth: '34px', textAlign: 'right' },
-  submitBtn: {
-    background: '#22c55e', color: '#000', border: 'none', borderRadius: '8px',
-    padding: '12px', fontWeight: '700', fontSize: '14px', cursor: 'pointer',
-    marginTop: '4px', fontFamily: 'inherit', transition: 'background 0.2s',
-  },
+  page:          { minHeight: '100vh', background: '#0f0f0f', fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif" },
+  container:     { maxWidth: '680px', margin: '0 auto', padding: '32px 20px 80px' },
+  pageHeader:    { marginBottom: 24 },
+  heading:       { color: '#fff', fontSize: 22, fontWeight: 700, letterSpacing: '-0.3px', marginBottom: 4 },
+  subheading:    { color: '#6b7280', fontSize: 13 },
+  card:          { background: '#1a1a1a', border: '1px solid #2d2d2d', borderRadius: 14, padding: 28 },
+  errorBox:      { background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', borderRadius: 8, padding: '12px 14px', fontSize: 13, marginBottom: 20 },
+  successBox:    { background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', color: '#4ade80', borderRadius: 8, padding: '12px 14px', fontSize: 13, marginBottom: 20 },
+  form:          { display: 'flex', flexDirection: 'column', gap: 18 },
+  row:           { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 },
+  fieldGroup:    { display: 'flex', flexDirection: 'column', gap: 6 },
+  label:         { color: '#9ca3af', fontSize: 12, fontWeight: 500 },
+  input:         { background: '#111', border: '1px solid #2d2d2d', borderRadius: 8, padding: '10px 12px', color: '#fff', fontSize: 14, outline: 'none', transition: 'border-color 0.2s', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit' },
+  fileField:     { background: '#111', border: '1px solid #2d2d2d', borderRadius: 8, padding: 14 },
+  fileTop:       { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  fileHint:      { color: '#4b5563', fontSize: 11 },
+  fileLabel:     { display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' },
+  fileBrowse:    { background: '#2d2d2d', color: '#e5e7eb', borderRadius: 6, padding: '6px 14px', fontSize: 12, fontWeight: 500, flexShrink: 0 },
+  fileName:      { color: '#6b7280', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  progressWrap:  { display: 'flex', alignItems: 'center', gap: 10 },
+  progressBar:   { flex: 1, height: 4, background: '#2d2d2d', borderRadius: 2, overflow: 'hidden' },
+  progressFill:  { height: '100%', background: '#22c55e', borderRadius: 2, transition: 'width 0.2s' },
+  progressLabel: { color: '#22c55e', fontSize: 12, fontWeight: 600, minWidth: 34, textAlign: 'right' },
+  submitBtn:     { background: '#22c55e', color: '#000', border: 'none', borderRadius: 8, padding: 12, fontWeight: 700, fontSize: 14, cursor: 'pointer', marginTop: 4, fontFamily: 'inherit', transition: 'background 0.2s' },
 };
 
 export default UploadMusic;
