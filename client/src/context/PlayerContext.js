@@ -31,12 +31,10 @@ async function safePlay(audio) {
 // ── Weighted Fisher-Yates shuffle ─────────────────────────────────────────────
 // Accepts an array of { song, weight } objects, returns shuffled song array.
 function weightedFisherYates(items) {
-  // Build cumulative weights
   const result = [...items];
   const n = result.length;
 
   for (let i = n - 1; i > 0; i--) {
-    // Pick j with probability proportional to weight
     let totalWeight = 0;
     for (let k = 0; k <= i; k++) totalWeight += result[k].weight;
 
@@ -54,29 +52,19 @@ function weightedFisherYates(items) {
 }
 
 // ── Build weights for a song list ─────────────────────────────────────────────
-// playedThisSession: Set of song IDs played this session
-// skipSignals: Map of songId → skip count
-// playSignals: Map of songId → complete-play count
-// likedSongIds: Set of liked song IDs
 function buildWeightedOrder(songs, playedThisSession, skipSignals, playSignals, likedSongIds) {
   const items = songs.map(song => {
-    let weight = 10; // base weight
+    let weight = 10;
 
-    // Liked songs get a boost
     if (likedSongIds.has(song.id)) weight += 4;
-
-    // Songs played this session get penalised
     if (playedThisSession.has(song.id)) weight -= 6;
 
-    // Skip signals lower the weight (each skip removes 2 points)
     const skips = skipSignals.get(song.id) || 0;
     weight -= skips * 2;
 
-    // Completion signals raise the weight slightly
     const completions = playSignals.get(song.id) || 0;
     weight += completions * 1;
 
-    // Never go below 1 so every song always has a chance
     weight = Math.max(1, weight);
 
     return { song, weight };
@@ -104,13 +92,26 @@ export const PlayerProvider = ({ children }) => {
 
   const audioRef = useRef(new Audio());
 
+  // ── PERMANENT FIX: Audio cleanup on unmount ───────────────────────────────
+  // Without this, the Audio element keeps playing after React hot-reload
+  // (dev) or when the provider tree is torn down. In StrictMode React
+  // double-invokes the provider, creating two Audio objects — the first
+  // one orphans and plays in the background with no way to stop it.
+  useEffect(() => {
+    return () => {
+      const audio = audioRef.current;
+      audio.pause();
+      audio.src = '';
+    };
+  }, []);
+
   // ── Smart Shuffle state (all in refs — no re-renders needed) ──────────────
-  const smartCycleRef       = useRef([]);   // pre-generated ordered list
-  const smartCycleIndexRef  = useRef(0);    // current position in the cycle
-  const skipSignalsRef      = useRef(new Map());  // songId → skip count this session
-  const playSignalsRef      = useRef(new Map());  // songId → completion count this session
-  const playedThisSessionRef= useRef(new Set());  // songs started this session
-  const songStartTimeRef    = useRef(null); // Date.now() when current song started
+  const smartCycleRef       = useRef([]);
+  const smartCycleIndexRef  = useRef(0);
+  const skipSignalsRef      = useRef(new Map());
+  const playSignalsRef      = useRef(new Map());
+  const playedThisSessionRef= useRef(new Set());
+  const songStartTimeRef    = useRef(null);
 
   // Keep refs in sync with state for callbacks
   const currentSongRef  = useRef(null);
@@ -170,11 +171,9 @@ export const PlayerProvider = ({ children }) => {
       : 999;
 
     if (skipped && elapsed < 10) {
-      // Skip signal — user bailed within 10 seconds
       const prev = skipSignalsRef.current.get(song.id) || 0;
       skipSignalsRef.current.set(song.id, prev + 1);
     } else if (!skipped) {
-      // Completion signal
       const prev = playSignalsRef.current.get(song.id) || 0;
       playSignalsRef.current.set(song.id, prev + 1);
     }
@@ -213,11 +212,10 @@ export const PlayerProvider = ({ children }) => {
       return;
     }
 
-    recordSkipOrPlay(true); // previous song was skipped (if any)
+    recordSkipOrPlay(true);
 
     const list = songList.length > 0 ? songList : songsRef.current;
 
-    // Regenerate smart cycle whenever we get a new song list
     if (shuffleModeRef.current === 'smart' && list.length > 0) {
       regenerateSmartCycle(list, song.id);
     }
@@ -240,7 +238,7 @@ export const PlayerProvider = ({ children }) => {
   const getNextSong = useCallback((list, currentSong, mode, repeatMode) => {
     if (!list.length) return null;
 
-    if (repeatMode === 'one') return currentSong; // handled separately with seek reset
+    if (repeatMode === 'one') return currentSong;
 
     if (mode === 'smart') {
       const cycle = smartCycleRef.current;
@@ -248,7 +246,6 @@ export const PlayerProvider = ({ children }) => {
 
       let nextIdx = smartCycleIndexRef.current + 1;
       if (nextIdx >= cycle.length) {
-        // Cycle exhausted — regenerate
         const newCycle = regenerateSmartCycle(list);
         smartCycleIndexRef.current = 0;
         return newCycle[0] || null;
@@ -266,7 +263,7 @@ export const PlayerProvider = ({ children }) => {
     const nextIdx = idx + 1;
     if (nextIdx >= list.length) {
       if (repeatMode === 'all') return list[0];
-      return null; // end of queue
+      return null;
     }
     return list[nextIdx];
   }, [regenerateSmartCycle]);
@@ -304,7 +301,7 @@ export const PlayerProvider = ({ children }) => {
           return latestSong;
         }
 
-        recordSkipOrPlay(true); // song was skipped
+        recordSkipOrPlay(true);
 
         const next = getNextSong(
           latestSongs, latestSong,
@@ -337,7 +334,6 @@ export const PlayerProvider = ({ children }) => {
   const playPrev = useCallback(() => {
     const audio = audioRef.current;
 
-    // If more than 3 seconds in, restart current song
     if (audio.currentTime > 3) {
       audio.currentTime = 0;
       return;
@@ -370,7 +366,7 @@ export const PlayerProvider = ({ children }) => {
     const audio = audioRef.current;
 
     const handleEnded = () => {
-      recordSkipOrPlay(false); // song completed naturally
+      recordSkipOrPlay(false);
 
       setSongs(latestSongs => {
         setCurrentSong(latestSong => {
@@ -416,7 +412,6 @@ export const PlayerProvider = ({ children }) => {
     setShuffleMode(prev => {
       const nextMode = prev === 'none' ? 'smart' : prev === 'smart' ? 'classic' : 'none';
 
-      // When activating smart shuffle, pre-generate the cycle immediately
       if (nextMode === 'smart' && songsRef.current.length > 0) {
         regenerateSmartCycle(songsRef.current, currentSongRef.current?.id);
       }
@@ -435,7 +430,6 @@ export const PlayerProvider = ({ children }) => {
       setIsPlaying(false);
       setSongs([]);
       setRecentlyPlayed([]);
-      // Reset session signals
       playedThisSessionRef.current  = new Set();
       skipSignalsRef.current        = new Map();
       playSignalsRef.current        = new Map();
@@ -507,7 +501,6 @@ export const PlayerProvider = ({ children }) => {
   const cycleRepeat   = () => setRepeat(r => r === 'none' ? 'all' : r === 'all' ? 'one' : 'none');
   const toggleQueue   = () => setShowQueue(p => !p);
 
-  // Legacy shuffle boolean for components that need it (MusicPlayer reads shuffleMode directly)
   const shuffle = shuffleMode !== 'none';
 
   const playPlaylist = useCallback((playlistSongs, playlistName, shuffled = false) => {
@@ -525,10 +518,10 @@ export const PlayerProvider = ({ children }) => {
       playSong, togglePlay,
       playNext, playPrev,
       repeat, cycleRepeat,
-      shuffle,          // boolean — true when any shuffle is active
-      shuffleMode,      // 'none' | 'smart' | 'classic'
-      cycleShuffleMode, // replaces toggleShuffle
-      toggleShuffle: cycleShuffleMode, // backwards compat alias
+      shuffle,
+      shuffleMode,
+      cycleShuffleMode,
+      toggleShuffle: cycleShuffleMode,
       isMuted, toggleMute,
       volume, handleVolumeChange,
       songs, setSongs,

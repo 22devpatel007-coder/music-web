@@ -4,10 +4,12 @@ const verifyToken    = require('../middleware/verifyToken');
 const isAdmin        = require('../middleware/isAdmin');
 const upload         = require('../middleware/upload');
 const songsController = require('../controllers/songs.controller');
+const searchController = require('../controllers/search.controller');
 
 // ─── Public ───────────────────────────────────────────────────────────────────
 router.get('/',    songsController.getAllSongs);
 router.get('/:id', songsController.getSongById);
+router.get('/', searchController.searchSongs);
 
 // ─── Admin only ───────────────────────────────────────────────────────────────
 
