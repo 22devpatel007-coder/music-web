@@ -1,11 +1,12 @@
 import React, {
   createContext, useContext, useState,
-  useCallback, useEffect, useRef,
+  useCallback, useEffect,
 } from 'react';
 import {
   collection, query, where, orderBy,
   onSnapshot, addDoc, updateDoc, deleteDoc,
-  doc, getDoc, serverTimestamp, arrayUnion, arrayRemove,
+  doc, getDoc, serverTimestamp,
+  arrayUnion, arrayRemove,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from './AuthContext';
@@ -15,13 +16,14 @@ export const usePlaylist = () => useContext(PlaylistContext);
 
 export const PlaylistProvider = ({ children }) => {
   const { currentUser } = useAuth();
-  const [playlists, setPlaylists] = useState([]);
-  const [loading, setLoading]     = useState(true);
+  const [playlists,      setPlaylists]      = useState([]);
+  const [adminPlaylists, setAdminPlaylists] = useState([]);
+  const [loading,        setLoading]        = useState(true);
+  const [adminLoading,   setAdminLoading]   = useState(true);
 
-  // ── Real-time listener ────────────────────────────────────────────────────
-  // onSnapshot fires automatically on every Firestore write, so any mutation
-  // (add song, remove song, rename, delete) instantly updates all components
-  // that read from this context — no manual refresh needed.
+  // ── User's own playlists ──────────────────────────────────────────────────
+  // Single-field where + orderBy on same field = no composite index needed.
+  // isAdmin filter is done client-side to avoid compound index requirement.
   useEffect(() => {
     if (!currentUser) {
       setPlaylists([]);
@@ -35,20 +37,58 @@ export const PlaylistProvider = ({ children }) => {
       orderBy('createdAt', 'desc')
     );
 
-    const unsub = onSnapshot(q, (snap) => {
-      setPlaylists(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      setLoading(false);
-    }, (err) => {
-      console.error('[PlaylistContext] snapshot error:', err.message);
-      setLoading(false);
-    });
+    const unsub = onSnapshot(q,
+      (snap) => {
+        const userOwned = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter(p => !p.isAdmin);   // client-side filter — no extra index
+        setPlaylists(userOwned);
+        setLoading(false);
+      },
+      (err) => {
+        console.error('[PlaylistContext] user playlists error:', err.message);
+        setLoading(false);
+      }
+    );
 
     return unsub;
   }, [currentUser]);
 
-  // ── assertExists: verify doc exists before mutating ───────────────────────
-  // updateDoc throws "No document to update" on missing docs.
-  // This check gives a clear error and instantly purges stale local state.
+  // ── Admin / Library playlists ─────────────────────────────────────────────
+  // Single-field query on isAdmin only — no composite index needed.
+  // isPublic and sort are handled client-side.
+  useEffect(() => {
+    const q = query(
+      collection(db, 'playlists'),
+      where('isAdmin', '==', true)
+    );
+
+    const unsub = onSnapshot(q,
+      (snap) => {
+        const adminOnes = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter(p => p.isPublic === true)
+          .sort((a, b) => {
+            const toMs = (v) => {
+              if (!v) return 0;
+              if (v?.toDate) return v.toDate().getTime();
+              return new Date(v).getTime();
+            };
+            return toMs(b.createdAt) - toMs(a.createdAt);
+          });
+        setAdminPlaylists(adminOnes);
+        setAdminLoading(false);
+      },
+      (err) => {
+        console.error('[PlaylistContext] adminPlaylists error:', err.message);
+        setAdminLoading(false);
+      }
+    );
+
+    return unsub;
+  }, []);
+
+  // ── assertExists ──────────────────────────────────────────────────────────
   const assertExists = useCallback(async (playlistId) => {
     const snap = await getDoc(doc(db, 'playlists', playlistId));
     if (!snap.exists()) {
@@ -60,10 +100,7 @@ export const PlaylistProvider = ({ children }) => {
     return snap;
   }, []);
 
-  // ── CRUD ──────────────────────────────────────────────────────────────────
-  // Every write below goes straight to Firestore. The onSnapshot listener
-  // above picks up the change and pushes the new state to all consumers
-  // automatically — no setState() calls needed after writes.
+  // ── CRUD (user playlists only) ────────────────────────────────────────────
 
   const createPlaylist = useCallback(async (name, description = '') => {
     if (!currentUser) throw new Error('Not authenticated');
@@ -76,6 +113,7 @@ export const PlaylistProvider = ({ children }) => {
       coverUrl:    '',
       coverType:   'auto',
       isPublic:    false,
+      isAdmin:     false,
       isFeatured:  false,
       createdAt:   serverTimestamp(),
       updatedAt:   serverTimestamp(),
@@ -85,7 +123,6 @@ export const PlaylistProvider = ({ children }) => {
 
   const deletePlaylist = useCallback(async (playlistId) => {
     await deleteDoc(doc(db, 'playlists', playlistId));
-    // onSnapshot fires → stale entry removed from state automatically
   }, []);
 
   const updatePlaylist = useCallback(async (playlistId, fields) => {
@@ -102,7 +139,6 @@ export const PlaylistProvider = ({ children }) => {
       songIds:   arrayUnion(songId),
       updatedAt: serverTimestamp(),
     });
-    // onSnapshot fires → playlists[x].songIds updated → all consumers re-render
   }, [assertExists]);
 
   const removeSongFromPlaylist = useCallback(async (playlistId, songId) => {
@@ -111,7 +147,6 @@ export const PlaylistProvider = ({ children }) => {
       songIds:   arrayRemove(songId),
       updatedAt: serverTimestamp(),
     });
-    // onSnapshot fires → playlists[x].songIds updated → PlaylistDetail re-renders
   }, [assertExists]);
 
   const reorderSongs = useCallback(async (playlistId, newSongIds) => {
@@ -124,7 +159,10 @@ export const PlaylistProvider = ({ children }) => {
 
   return (
     <PlaylistContext.Provider value={{
-      playlists, loading,
+      playlists,
+      adminPlaylists,
+      loading,
+      adminLoading,
       createPlaylist,
       deletePlaylist,
       updatePlaylist,

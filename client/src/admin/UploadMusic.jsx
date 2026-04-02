@@ -1,42 +1,30 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { axiosUpload } from '../utils/axiosInstance';
+import { checkDuplicateSong, formatDuplicateMessage } from '../utils/duplicateCheck';
 import Navbar from '../components/Navbar';
-
-/**
- * UploadMusic — single song upload form.
- *
- * Duration accepts both:
- *   - Plain seconds:  214
- *   - mm:ss format:   3:34
- * Both are normalised to integer seconds before sending to the server.
- *
- * PERMANENT SOLUTION: axiosUpload (5-min timeout) used for all uploads.
- */
 
 /** Convert "3:34" → 214, "214" → 214, anything else → 0 */
 const parseDurationToSeconds = (raw) => {
   const str = String(raw || '').trim();
   if (!str) return 0;
-
-  // mm:ss
   if (/^\d{1,3}:\d{2}$/.test(str)) {
     const [m, s] = str.split(':').map(Number);
     return m * 60 + s;
   }
-  // plain integer
   const n = parseInt(str, 10);
   return isNaN(n) ? 0 : n;
 };
 
 const UploadMusic = () => {
-  const [form, setForm] = useState({ title: '', artist: '', genre: '', duration: '' });
+  const [form, setForm]           = useState({ title: '', artist: '', genre: '', duration: '' });
   const [songFile,  setSongFile]  = useState(null);
   const [coverFile, setCoverFile] = useState(null);
   const [progress,  setProgress]  = useState(0);
   const [error,     setError]     = useState('');
   const [success,   setSuccess]   = useState('');
   const [loading,   setLoading]   = useState(false);
+  const [checking,  setChecking]  = useState(false);
   const navigate = useNavigate();
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
@@ -45,8 +33,19 @@ const UploadMusic = () => {
     e.preventDefault();
     setError('');
     setSuccess('');
+
     if (!songFile)  return setError('Please select an MP3 file.');
     if (!coverFile) return setError('Please select a cover image.');
+
+    // ── Pre-upload duplicate check ────────────────────────────────────────────
+    setChecking(true);
+    const dupResult = await checkDuplicateSong(form.title.trim(), form.artist.trim());
+    setChecking(false);
+
+    if (dupResult.duplicate) {
+      setError(formatDuplicateMessage(dupResult.existing));
+      return;
+    }
 
     const durationSecs = parseDurationToSeconds(form.duration);
 
@@ -72,14 +71,21 @@ const UploadMusic = () => {
       setCoverFile(null);
       setTimeout(() => navigate('/admin/songs'), 1500);
     } catch (err) {
-      setError(
-        err.response?.data?.error ||
-        err.message ||
-        'Upload failed. Please try again.'
-      );
+      // Handle server-side duplicate (race condition)
+      if (err.response?.data?.code === 'DUPLICATE_SONG') {
+        setError(formatDuplicateMessage(err.response.data.existing));
+      } else {
+        setError(
+          err.response?.data?.error ||
+          err.message ||
+          'Upload failed. Please try again.'
+        );
+      }
     }
     setLoading(false);
   };
+
+  const isBusy = loading || checking;
 
   return (
     <div style={styles.page}>
@@ -102,9 +108,9 @@ const UploadMusic = () => {
             <div style={styles.row}>
               <Field label="Genre" name="genre" placeholder="Pop, Rock, Hip-Hop…" value={form.genre} onChange={handleChange} required />
               <Field
-                label="Duration  (mm:ss  or  seconds)"
+                label="Duration (mm:ss or seconds)"
                 name="duration"
-                placeholder="e.g. 3:34  or  214"
+                placeholder="e.g. 3:34 or 214"
                 value={form.duration}
                 onChange={handleChange}
                 required
@@ -137,10 +143,12 @@ const UploadMusic = () => {
 
             <button
               type="submit"
-              disabled={loading}
-              style={{ ...styles.submitBtn, opacity: loading ? 0.6 : 1 }}
+              disabled={isBusy}
+              style={{ ...styles.submitBtn, opacity: isBusy ? 0.6 : 1 }}
             >
-              {loading ? `Uploading… ${progress}%` : 'Upload Song'}
+              {checking ? 'Checking for duplicates…'
+               : loading ? `Uploading… ${progress}%`
+               : 'Upload Song'}
             </button>
           </form>
         </div>
@@ -150,13 +158,13 @@ const UploadMusic = () => {
 };
 
 /* ── Sub-components ────────────────────────────────────────────────────────── */
-const Field = ({ label, name, type = 'text', placeholder, value, onChange, required }) => {
+const Field = ({ label, name, placeholder, value, onChange, required }) => {
   const [focused, setFocused] = useState(false);
   return (
     <div style={styles.fieldGroup}>
       <label style={styles.label}>{label}</label>
       <input
-        type={type} name={name} placeholder={placeholder}
+        type="text" name={name} placeholder={placeholder}
         value={value} onChange={onChange} required={required}
         style={{ ...styles.input, borderColor: focused ? '#22c55e' : '#2d2d2d' }}
         onFocus={() => setFocused(true)}
@@ -182,7 +190,6 @@ const FileField = ({ label, hint, accept, file, onChange }) => (
   </div>
 );
 
-/* ── Styles ────────────────────────────────────────────────────────────────── */
 const styles = {
   page:          { minHeight: '100vh', background: '#0f0f0f', fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif" },
   container:     { maxWidth: '680px', margin: '0 auto', padding: '32px 20px 80px' },

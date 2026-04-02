@@ -1,6 +1,7 @@
 const { db } = require('../config/firebase');
 const cloudinary = require('../config/cloudinary');
 const streamifier = require('streamifier');
+const { checkDuplicateSong } = require('../utils/duplicateCheck');
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 const uploadToCloudinary = (buffer, options) =>
@@ -50,10 +51,45 @@ exports.getSongById = async (req, res) => {
   }
 };
 
+// ─── POST /api/songs/check-duplicate ─────────────────────────────────────────
+// Called by admin upload form BEFORE sending the file, so no bandwidth is wasted.
+exports.checkDuplicate = async (req, res) => {
+  try {
+    const { title, artist, excludeId } = req.body;
+    if (!title || !artist) {
+      return res.status(400).json({ error: 'title and artist are required' });
+    }
+    const existing = await checkDuplicateSong(title, artist, excludeId || null);
+    if (existing) {
+      return res.json({ duplicate: true, existing });
+    }
+    res.json({ duplicate: false });
+  } catch (err) {
+    console.error('checkDuplicate error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+};
+
 // ─── POST /api/songs (admin only) ────────────────────────────────────────────
 exports.uploadSong = async (req, res) => {
   try {
     const { title, artist, genre, duration } = req.body;
+
+    if (!title || !artist || !genre) {
+      return res.status(400).json({ error: 'title, artist and genre are required' });
+    }
+
+    // ── Duplicate check (server-side safety net) ──────────────────────────────
+    // The client checks first, but we re-check here to handle race conditions
+    // (two admins uploading the same song simultaneously).
+    const existing = await checkDuplicateSong(title, artist);
+    if (existing) {
+      return res.status(409).json({
+        error: `Song already exists: "${existing.title}" by ${existing.artist}`,
+        code: 'DUPLICATE_SONG',
+        existing,
+      });
+    }
 
     if (!req.files?.['song']?.[0])  return res.status(400).json({ error: 'No song file received' });
     if (!req.files?.['cover']?.[0]) return res.status(400).json({ error: 'No cover file received' });
@@ -87,7 +123,7 @@ exports.uploadSong = async (req, res) => {
       storagePath:      songResult.public_id,
       coverStoragePath: coverResult.public_id,
       playCount:        0,
-      featured:         false,          // NEW: featured flag
+      featured:         false,
       uploadedBy:       req.user.uid,
       createdAt:        new Date(),
       updatedAt:        new Date(),
@@ -102,17 +138,6 @@ exports.uploadSong = async (req, res) => {
 };
 
 // ─── PATCH /api/songs/:id (admin only) ───────────────────────────────────────
-// Handles two cases:
-//   1. Metadata-only update (JSON body): title, artist, genre, duration, featured
-//   2. Metadata + new cover image (multipart): same fields + cover file
-//
-// PERMANENT SOLUTION NOTES:
-// - Old Cloudinary cover is deleted only after the new one is uploaded
-//   successfully, preventing orphaned assets AND avoiding a window where
-//   the song has no cover.
-// - titleLower / artistLower are always re-derived from title / artist
-//   so the search index stays consistent.
-// - updatedAt is always set so clients can cache-bust.
 exports.updateSong = async (req, res) => {
   try {
     const docSnap = await db.collection('songs').doc(req.params.id).get();
@@ -121,8 +146,21 @@ exports.updateSong = async (req, res) => {
     const existing = docSnap.data();
     const updates  = {};
 
-    // ── Scalar fields ─────────────────────────────────────────────────────────
     const { title, artist, genre, duration, featured } = req.body;
+
+    // Duplicate check when title or artist is being changed
+    if ((title !== undefined || artist !== undefined)) {
+      const newTitle  = title  !== undefined ? String(title).trim()  : existing.title;
+      const newArtist = artist !== undefined ? String(artist).trim() : existing.artist;
+      const dup = await checkDuplicateSong(newTitle, newArtist, req.params.id);
+      if (dup) {
+        return res.status(409).json({
+          error: `Song already exists: "${dup.title}" by ${dup.artist}`,
+          code: 'DUPLICATE_SONG',
+          existing: dup,
+        });
+      }
+    }
 
     if (title  !== undefined) {
       updates.title       = String(title).trim();
@@ -136,10 +174,8 @@ exports.updateSong = async (req, res) => {
     if (duration !== undefined) updates.duration = Number(duration) || 0;
     if (featured !== undefined) updates.featured = Boolean(featured);
 
-    // ── Cover image replacement ───────────────────────────────────────────────
     const coverFile = req.files?.['cover']?.[0];
     if (coverFile) {
-      // Upload new cover first
       const coverResult = await uploadToCloudinary(coverFile.buffer, {
         resource_type: 'image',
         folder: 'melostream/covers',
@@ -149,7 +185,6 @@ exports.updateSong = async (req, res) => {
       updates.coverUrl          = coverResult.secure_url;
       updates.coverStoragePath  = coverResult.public_id;
 
-      // Delete old cover from Cloudinary (fire-and-forget — don't block response)
       if (existing.coverStoragePath) {
         cloudinary.uploader
           .destroy(existing.coverStoragePath, { resource_type: 'image' })
@@ -163,7 +198,6 @@ exports.updateSong = async (req, res) => {
 
     await db.collection('songs').doc(req.params.id).update(updates);
 
-    // Return the full merged document
     const merged = { ...existing, ...updates };
     res.json(serializeSong(req.params.id, merged));
   } catch (err) {

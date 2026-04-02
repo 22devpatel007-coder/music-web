@@ -2,8 +2,6 @@ const express = require('express');
 const cors    = require('cors');
 require('dotenv').config();
 
-// Production security hardening
-// Run: npm install helmet express-rate-limit
 const helmet    = require('helmet');
 const rateLimit = require('express-rate-limit');
 
@@ -14,15 +12,12 @@ const app = express();
 app.use(helmet());
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
-// FIX: Wildcard CORS was used before (cors() with no options = allow all origins).
-// In production, restrict to your actual frontend URL via CORS_ORIGIN env var.
 const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:3000')
   .split(',')
   .map(o => o.trim());
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (server-to-server, curl, mobile apps)
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
     callback(new Error(`CORS: origin ${origin} not allowed`));
@@ -31,10 +26,9 @@ app.use(cors({
 }));
 
 // ─── Body parsing ─────────────────────────────────────────────────────────────
-app.use(express.json({ limit: '1mb' })); // JSON bodies only for non-upload routes
+app.use(express.json({ limit: '1mb' }));
 
 // ─── Global rate limiting ─────────────────────────────────────────────────────
-// 200 requests per IP per 15 minutes — prevents scraping and brute-force.
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 200,
@@ -44,7 +38,6 @@ const globalLimiter = rateLimit({
 });
 app.use(globalLimiter);
 
-// Stricter limiter for auth endpoints
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
@@ -52,12 +45,13 @@ const authLimiter = rateLimit({
 });
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
-app.use('/api/auth',   authLimiter, require('./routes/auth.routes'));
-app.use('/api/songs',              require('./routes/songs.routes'));
-app.use('/api/search',             require('./routes/search.routes'));
-app.use('/api/users',              require('./routes/users.routes'));
+app.use('/api/auth',            authLimiter, require('./routes/auth.routes'));
+app.use('/api/songs',                        require('./routes/songs.routes'));
+app.use('/api/search',                       require('./routes/search.routes'));
+app.use('/api/users',                        require('./routes/users.routes'));
+app.use('/api/admin/playlists',              require('./routes/adminPlaylist.routes'));
 
-// Health check (useful for load balancers / uptime monitors)
+// Health check
 app.get('/health', (_req, res) => res.json({ status: 'ok', ts: Date.now() }));
 
 // ─── Global error handler — MUST be last ─────────────────────────────────────
