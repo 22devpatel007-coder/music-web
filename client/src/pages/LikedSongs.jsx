@@ -1,34 +1,20 @@
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import axiosInstance from '../utils/axiosInstance';
-import { useAuth } from '../context/AuthContext';
-import Navbar from '../components/Navbar';
-import SongList from '../components/SongList';
-import Loader from '../components/Loader';
+import { useMemo } from "react";
+import { Link } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import { useSongs } from "../context/SongsContext";
+import Navbar from "../components/Navbar";
+import SongList from "../components/SongList";
+import Loader from "../components/Loader";
 
 const LikedSongs = () => {
   const { likedSongs } = useAuth();
-  const [songs, setSongs] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // PERMANENT FIX: Read from SongsContext — no duplicate /api/songs fetch
+  const { songs, loading } = useSongs();
 
-  useEffect(() => {
-    const fetchAll = async () => {
-      if (!likedSongs || likedSongs.length === 0) {
-        setSongs([]);
-        setLoading(false);
-        return;
-      }
-      try {
-        const res = await axiosInstance.get('/api/songs');
-        const liked = res.data.filter(s => likedSongs.includes(s.id));
-        setSongs(liked);
-      } catch (err) {
-        console.error('Failed to fetch liked songs:', err);
-      }
-      setLoading(false);
-    };
-    fetchAll();
-  }, [likedSongs]);
+  const liked = useMemo(() => {
+    if (!likedSongs || likedSongs.length === 0) return [];
+    return songs.filter((s) => likedSongs.includes(s.id));
+  }, [songs, likedSongs]);
 
   if (loading) return <Loader />;
 
@@ -36,26 +22,21 @@ const LikedSongs = () => {
     <div style={styles.page}>
       <Navbar />
       <div style={styles.container}>
-
-        {/* Page header */}
         <div style={styles.header}>
-          {/* Professional heart logo mark — SVG only, no emoji */}
           <div style={styles.iconWrap}>
             <HeartIcon />
           </div>
           <div>
             <h1 style={styles.heading}>Liked Songs</h1>
             <p style={styles.subheading}>
-              {songs.length} {songs.length === 1 ? 'song' : 'songs'} saved
+              {liked.length} {liked.length === 1 ? "song" : "songs"} saved
             </p>
           </div>
         </div>
 
-        {/* Divider */}
         <div style={styles.divider} />
 
-        {/* Empty state */}
-        {songs.length === 0 ? (
+        {liked.length === 0 ? (
           <div style={styles.empty}>
             <div style={styles.emptyIconWrap}>
               <HeartOutlineIcon />
@@ -69,17 +50,14 @@ const LikedSongs = () => {
             </Link>
           </div>
         ) : (
-          <SongList songs={songs} />
+          <SongList songs={liked} />
         )}
       </div>
 
-      {/* Player padding */}
       <div style={{ height: 88 }} />
     </div>
   );
 };
-
-/* ─── Icons ─── */
 
 const HeartIcon = () => (
   <svg
@@ -90,7 +68,6 @@ const HeartIcon = () => (
     xmlns="http://www.w3.org/2000/svg"
     aria-hidden="true"
   >
-    {/* Solid filled heart — clean geometric form */}
     <path
       d="M12 21C12 21 3 14.5 3 8.5C3 5.42 5.42 3 8.5 3C10.24 3 11.91 3.81 13 5.09C14.09 3.81 15.76 3 17.5 3C20.58 3 23 5.42 23 8.5C23 14.5 14 21 12 21Z"
       fill="#fff"
@@ -117,93 +94,69 @@ const HeartOutlineIcon = () => (
   </svg>
 );
 
-/* ─── Styles ─── */
-
 const styles = {
   page: {
-    minHeight: '100vh',
-    background: '#0f0f0f',
+    minHeight: "100vh",
+    background: "#0f0f0f",
     fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
   },
-  container: {
-    maxWidth: '1200px',
-    margin: '0 auto',
-    padding: '36px 20px 0',
-  },
+  container: { maxWidth: "1200px", margin: "0 auto", padding: "36px 20px 0" },
   header: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-    marginBottom: '24px',
+    display: "flex",
+    alignItems: "center",
+    gap: "16px",
+    marginBottom: "24px",
   },
   iconWrap: {
-    width: '52px',
-    height: '52px',
-    background: '#e11d48',         // rose-600 — rich, intentional
-    borderRadius: '14px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: "52px",
+    height: "52px",
+    background: "#e11d48",
+    borderRadius: "14px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     flexShrink: 0,
   },
   heading: {
-    color: '#fff',
-    fontSize: '22px',
-    fontWeight: '700',
-    letterSpacing: '-0.3px',
-    marginBottom: '4px',
+    color: "#fff",
+    fontSize: "22px",
+    fontWeight: "700",
+    letterSpacing: "-0.3px",
+    marginBottom: "4px",
   },
-  subheading: {
-    color: '#6b7280',
-    fontSize: '13px',
-  },
-
-  divider: {
-    height: '1px',
-    background: '#2d2d2d',
-    marginBottom: '28px',
-  },
-
-  /* Empty state */
+  subheading: { color: "#6b7280", fontSize: "13px" },
+  divider: { height: "1px", background: "#2d2d2d", marginBottom: "28px" },
   empty: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    textAlign: 'center',
-    padding: '72px 20px',
-    gap: '12px',
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    textAlign: "center",
+    padding: "72px 20px",
+    gap: "12px",
   },
   emptyIconWrap: {
-    width: '60px',
-    height: '60px',
-    background: '#1a1a1a',
-    border: '1px solid #2d2d2d',
-    borderRadius: '16px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: '4px',
+    width: "60px",
+    height: "60px",
+    background: "#1a1a1a",
+    border: "1px solid #2d2d2d",
+    borderRadius: "16px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: "4px",
   },
-  emptyTitle: {
-    color: '#fff',
-    fontSize: '16px',
-    fontWeight: '600',
-  },
-  emptySubtitle: {
-    color: '#6b7280',
-    fontSize: '13px',
-    maxWidth: '260px',
-  },
+  emptyTitle: { color: "#fff", fontSize: "16px", fontWeight: "600" },
+  emptySubtitle: { color: "#6b7280", fontSize: "13px", maxWidth: "260px" },
   browseBtn: {
-    display: 'inline-block',
-    marginTop: '8px',
-    background: '#22c55e',
-    color: '#000',
-    textDecoration: 'none',
-    borderRadius: '8px',
-    padding: '10px 24px',
-    fontSize: '13px',
-    fontWeight: '600',
+    display: "inline-block",
+    marginTop: "8px",
+    background: "#22c55e",
+    color: "#000",
+    textDecoration: "none",
+    borderRadius: "8px",
+    padding: "10px 24px",
+    fontSize: "13px",
+    fontWeight: "600",
   },
 };
 

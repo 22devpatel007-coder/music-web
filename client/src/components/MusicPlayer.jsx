@@ -4,17 +4,16 @@ import { usePlayer } from '../context/PlayerContext';
 const MusicPlayer = () => {
   const {
     currentSong, isPlaying, togglePlay, playNext, playPrev, audioRef,
-    repeat, cycleRepeat, shuffle, toggleShuffle,
+    repeat, cycleRepeat, shuffleMode, cycleShuffleMode,
     songs, removeFromQueue, showQueue, toggleQueue,
     playingPlaylistName,
   } = usePlayer();
+
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [volume, setVolume]     = useState(1);
-  const [mini, setMini]         = useState(false);
-  // FIX: Track whether user is actively dragging seek — prevents
-  // the timeupdate listener from overwriting the thumb position mid-drag.
-  const [seeking, setSeeking]   = useState(false);
+  const [volume,   setVolume]   = useState(1);
+  const [mini,     setMini]     = useState(false);
+  const [seeking,  setSeeking]  = useState(false);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -30,9 +29,9 @@ const MusicPlayer = () => {
     };
   }, [audioRef, seeking]);
 
-  const handleSeekStart = ()  => setSeeking(true);
+  const handleSeekStart  = ()  => setSeeking(true);
   const handleSeekChange = (e) => setProgress(Number(e.target.value));
-  const handleSeekEnd = (e)   => {
+  const handleSeekEnd    = (e) => {
     audioRef.current.currentTime = Number(e.target.value);
     setSeeking(false);
   };
@@ -51,7 +50,7 @@ const MusicPlayer = () => {
 
   if (!currentSong) return null;
 
-  // ── Mini pill ──
+  // ── Mini pill ──────────────────────────────────────────────────────────────
   if (mini) {
     return (
       <div style={styles.miniBar}>
@@ -71,6 +70,13 @@ const MusicPlayer = () => {
     );
   }
 
+  // ── Shuffle button label / tooltip ─────────────────────────────────────────
+  const shuffleLabel = shuffleMode === 'smart'
+    ? 'Smart Shuffle — weighted cycle (click for Classic)'
+    : shuffleMode === 'classic'
+    ? 'Classic Shuffle — random (click to turn off)'
+    : 'Shuffle off (click for Smart Shuffle)';
+
   return (
     <>
       <style>{`
@@ -87,10 +93,6 @@ const MusicPlayer = () => {
           height: 72px;
         }
 
-        /* ── Seek / Volume range inputs ──────────────────────── */
-        /* FIX: Previously the seek input was hidden (opacity:0) and floated
-           on top of a manually painted div. Now it's a fully visible,
-           styled native range input — thumb is always visible. */
         input[type=range].player-range {
           -webkit-appearance: none; appearance: none;
           height: 4px; border-radius: 2px; outline: none; cursor: pointer;
@@ -119,26 +121,62 @@ const MusicPlayer = () => {
           box-shadow: 0 1px 4px rgba(0,0,0,0.5);
         }
 
-        /* Wider click area for the seek bar */
         .seek-wrap {
           position: relative;
           height: 20px;
           display: flex;
           align-items: center;
         }
-        .seek-wrap input[type=range].player-range {
-          width: 100%;
-        }
+        .seek-wrap input[type=range].player-range { width: 100%; }
 
-        /* ── Buttons ── */
         .ctrl-btn {
           background: none; border: none; cursor: pointer;
           color: #9ca3af; padding: 6px; border-radius: 6px;
           display: flex; align-items: center; justify-content: center;
           transition: color 0.15s; flex-shrink: 0;
+          position: relative;
         }
         .ctrl-btn:hover { color: #fff; }
-        .ctrl-btn.active { color: #22c55e; }
+        .ctrl-btn.active-green { color: #22c55e; }
+
+        /* Shuffle button specific */
+        .shuffle-btn-wrap {
+          position: relative;
+          display: flex;
+          align-items: center;
+          gap: 2px;
+        }
+        .shuffle-badge {
+          font-size: 9px;
+          font-weight: 700;
+          letter-spacing: 0.3px;
+          padding: 1px 4px;
+          border-radius: 3px;
+          line-height: 1.4;
+          pointer-events: none;
+          flex-shrink: 0;
+        }
+        .shuffle-badge.smart   { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
+        .shuffle-badge.classic { background: rgba(251,191,36,0.15); color: #fbbf24; border: 1px solid rgba(251,191,36,0.3); }
+
+        /* Tooltip */
+        .ctrl-btn[data-tooltip]:hover::after {
+          content: attr(data-tooltip);
+          position: absolute;
+          bottom: calc(100% + 6px);
+          left: 50%;
+          transform: translateX(-50%);
+          background: #111;
+          color: #e5e7eb;
+          font-size: 11px;
+          white-space: nowrap;
+          padding: 5px 8px;
+          border-radius: 6px;
+          border: 1px solid #2d2d2d;
+          pointer-events: none;
+          z-index: 99;
+        }
+
         .play-btn {
           width: 38px; height: 38px; background: #22c55e;
           border: none; border-radius: 50%; cursor: pointer;
@@ -147,7 +185,6 @@ const MusicPlayer = () => {
         }
         .play-btn:hover { background: #16a34a; transform: scale(1.06); }
 
-        /* ── Responsive ── */
         @media (max-width: 900px) {
           .player-vol { display: none !important; }
           .player-side-btns { display: flex !important; }
@@ -165,7 +202,6 @@ const MusicPlayer = () => {
           .player-side-btns { display: flex !important; align-items: center; gap: 2px; flex-shrink: 0; margin-left: 4px; }
         }
 
-        /* ── Queue drawer ── */
         .queue-drawer {
           position: fixed; bottom: 80px; right: 16px;
           width: 300px; max-height: 400px;
@@ -216,7 +252,7 @@ const MusicPlayer = () => {
       )}
 
       <div className="player-bar" style={styles.bar}>
-        {/* ── Seek bar — full width, above the controls row ── */}
+        {/* Seek bar */}
         <div style={styles.seekRow}>
           <span style={styles.timeLabel}>{fmt(progress)}</span>
           <div className="seek-wrap" style={{ flex: 1 }}>
@@ -256,11 +292,38 @@ const MusicPlayer = () => {
 
           {/* Playback controls */}
           <div className="player-controls" style={styles.controls}>
-            <button className={`ctrl-btn hide-mobile${shuffle ? ' active' : ''}`} onClick={toggleShuffle} title="Shuffle"><ShuffleIcon /></button>
+            {/* Three-state shuffle button */}
+            <div className="hide-mobile shuffle-btn-wrap">
+              <button
+                className={`ctrl-btn${shuffleMode !== 'none' ? ' active-green' : ''}`}
+                onClick={cycleShuffleMode}
+                title={shuffleLabel}
+                data-tooltip={
+                  shuffleMode === 'none'    ? 'Smart Shuffle' :
+                  shuffleMode === 'smart'   ? 'Classic Shuffle' :
+                  'Shuffle Off'
+                }
+                style={shuffleMode === 'classic' ? { color: '#fbbf24' } : {}}
+              >
+                {shuffleMode === 'classic' ? <ShuffleClassicIcon /> : <ShuffleIcon />}
+              </button>
+              {shuffleMode === 'smart' && (
+                <span className="shuffle-badge smart">Smart</span>
+              )}
+              {shuffleMode === 'classic' && (
+                <span className="shuffle-badge classic">Classic</span>
+              )}
+            </div>
+
             <button className="ctrl-btn" onClick={playPrev} title="Previous"><PrevIcon /></button>
             <button className="play-btn" onClick={togglePlay}>{isPlaying ? <PauseIcon /> : <PlayIcon />}</button>
             <button className="ctrl-btn" onClick={playNext} title="Next"><NextIcon /></button>
-            <button className={`ctrl-btn hide-mobile${repeat !== 'none' ? ' active' : ''}`} onClick={cycleRepeat} title={`Repeat: ${repeat}`}>
+
+            <button
+              className={`ctrl-btn hide-mobile${repeat !== 'none' ? ' active-green' : ''}`}
+              onClick={cycleRepeat}
+              title={`Repeat: ${repeat}`}
+            >
               {repeat === 'one' ? <RepeatOneIcon /> : <RepeatIcon />}
             </button>
           </div>
@@ -270,13 +333,13 @@ const MusicPlayer = () => {
             <VolumeIcon volume={volume} />
             <input type="range" className="player-range" min="0" max="1" step="0.01" value={volume}
               onChange={handleVolume} style={{ '--pct': `${volume * 100}%`, width: '80px' }} />
-            <button className={`ctrl-btn${showQueue ? ' active' : ''}`} onClick={toggleQueue} title="Queue"><QueueIcon /></button>
+            <button className={`ctrl-btn${showQueue ? ' active-green' : ''}`} onClick={toggleQueue} title="Queue"><QueueIcon /></button>
             <button className="ctrl-btn" onClick={() => setMini(true)} title="Minimize"><ChevronDownIcon /></button>
           </div>
 
           {/* Queue + mini — mobile/tablet only */}
           <div className="player-side-btns" style={{ display: 'none' }}>
-            <button className={`ctrl-btn${showQueue ? ' active' : ''}`} onClick={toggleQueue} title="Queue"><QueueIcon /></button>
+            <button className={`ctrl-btn${showQueue ? ' active-green' : ''}`} onClick={toggleQueue} title="Queue"><QueueIcon /></button>
             <button className="ctrl-btn" onClick={() => setMini(true)} title="Minimize"><ChevronDownIcon /></button>
           </div>
         </div>
@@ -285,12 +348,33 @@ const MusicPlayer = () => {
   );
 };
 
-// ── Icons ─────────────────────────────────────────────────────────────────────
+// ── Icons ──────────────────────────────────────────────────────────────────────
 const PlayIcon      = ({ size = 16 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="#000"><path d="M8 5.14v14l11-7-11-7z"/></svg>;
 const PauseIcon     = ({ size = 16 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="#000"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>;
 const PrevIcon      = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>;
 const NextIcon      = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zm2.5-6 5.5 3.9V8.1L8.5 12zM16 6h2v12h-2z"/></svg>;
-const ShuffleIcon   = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>;
+
+// Smart Shuffle icon — standard arrows
+const ShuffleIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <polyline points="16 3 21 3 21 8"/>
+    <line x1="4" y1="20" x2="21" y2="3"/>
+    <polyline points="21 16 21 21 16 21"/>
+    <line x1="15" y1="15" x2="21" y2="21"/>
+    <line x1="4" y1="4" x2="9" y2="9"/>
+  </svg>
+);
+
+// Classic Shuffle icon — double arrows (slightly different style)
+const ShuffleClassicIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+    <polyline points="16 3 21 3 21 8"/>
+    <line x1="4" y1="20" x2="21" y2="3"/>
+    <polyline points="21 16 21 21 16 21"/>
+    <line x1="4" y1="4" x2="21" y2="21"/>
+  </svg>
+);
+
 const RepeatIcon    = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>;
 const RepeatOneIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/><line x1="12" y1="9" x2="12" y2="15"/></svg>;
 const QueueIcon     = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>;
@@ -314,8 +398,6 @@ const styles = {
     background: '#1a1a1a', borderTop: '1px solid #2d2d2d',
     zIndex: 50, backdropFilter: 'blur(8px)',
   },
-  // FIX: Seek bar is now a proper visible row above the controls,
-  // instead of an invisible input layered on top of a painted div.
   seekRow: {
     display: 'flex',
     alignItems: 'center',
@@ -331,14 +413,13 @@ const styles = {
     minWidth: '32px',
     flexShrink: 0,
   },
-  songInfo: { display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 },
-  cover: { width: '44px', height: '44px', borderRadius: '8px', objectFit: 'cover', flexShrink: 0, background: '#111' },
-  songText: { minWidth: 0 },
+  songInfo:   { display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 },
+  cover:      { width: '44px', height: '44px', borderRadius: '8px', objectFit: 'cover', flexShrink: 0, background: '#111' },
+  songText:   { minWidth: 0 },
   songTitle:  { color: '#fff',    fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: '2px' },
   songArtist: { color: '#6b7280', fontSize: '11px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-  controls: { display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' },
-  vol: { display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' },
-  // Mini player
+  controls:   { display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' },
+  vol:        { display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' },
   miniBar: {
     position: 'fixed', bottom: '16px', left: '50%', transform: 'translateX(-50%)',
     background: '#1a1a1a', border: '1px solid #2d2d2d', borderRadius: '40px',
