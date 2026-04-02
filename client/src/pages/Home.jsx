@@ -1,10 +1,7 @@
-// PERMANENT FIX 1: Replaced direct axiosInstance fetch with useSongs() from SongsContext.
-// Root cause of blank page: axiosInstance fired before Firebase resolved the auth token,
-// server returned 304 with empty body, setSongs([]) was called silently.
-// SongsContext already defers its fetch correctly and caches the result.
-//
-// PERMANENT FIX 2: SearchBar no longer redirects to /search from Home.
-// That fix lives in SearchBar.jsx (isOnSearchPage guard).
+// PERMANENT FIX:
+// - Uses useSongs() from SongsContext (no auth-timing race, no duplicate fetch)
+// - Inline local filter input replaces <SearchBar /> — filters songs in memory,
+//   no navigate(), no URL changes, no redirect to /search ever.
 
 import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
@@ -12,7 +9,6 @@ import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import Navbar from '../components/Navbar';
 import SongList from '../components/SongList';
-import SearchBar from '../components/SearchBar';
 import Loader from '../components/Loader';
 import { usePlayer } from '../context/PlayerContext';
 import { useSongs } from '../context/SongsContext';
@@ -27,10 +23,11 @@ const fmtDuration = (secs) => {
 };
 
 const Home = () => {
-  // PERMANENT FIX: Use SongsContext — single fetch, shared cache, no auth-timing race.
   const { songs, loading, error, refetch } = useSongs();
 
-  const [activeGenre, setActiveGenre] = useState('All');
+  const [activeGenre,   setActiveGenre]   = useState('All');
+  const [searchText,    setSearchText]    = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
   const [featuredPlaylists, setFeaturedPlaylists] = useState([]);
   const { recentlyPlayed, playSong, currentSong, isPlaying } = usePlayer();
 
@@ -48,10 +45,7 @@ const Home = () => {
         setFeaturedPlaylists(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
       } catch (err) {
         if (err.code === 'failed-precondition' || err.message?.includes('index')) {
-          console.warn(
-            '[Home] Featured playlists index not ready. Run:\n' +
-            '  firebase deploy --only firestore:indexes'
-          );
+          console.warn('[Home] Featured playlists index not ready.');
         } else {
           console.error('[Home] featured playlists:', err.message);
         }
@@ -66,10 +60,19 @@ const Home = () => {
     return ['All', ...Array.from(g).sort()];
   }, [songs]);
 
-  const filtered = useMemo(
-    () => (activeGenre === 'All' ? songs : songs.filter((s) => s.genre === activeGenre)),
-    [songs, activeGenre]
-  );
+  // Local filter — searches title + artist in memory, zero network calls, zero navigation
+  const filtered = useMemo(() => {
+    let result = activeGenre === 'All' ? songs : songs.filter((s) => s.genre === activeGenre);
+    if (searchText.trim().length >= 1) {
+      const q = searchText.trim().toLowerCase();
+      result = result.filter(
+        (s) =>
+          (s.title  || '').toLowerCase().includes(q) ||
+          (s.artist || '').toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [songs, activeGenre, searchText]);
 
   const featuredSongs = useMemo(
     () => songs.filter((s) => s.featured === true).slice(0, 10),
@@ -86,8 +89,6 @@ const Home = () => {
 
   if (loading) return <Loader />;
 
-  // PERMANENT FIX: Show a proper error state with Retry button instead of
-  // silently rendering an empty library when the fetch fails.
   if (error) {
     return (
       <div style={styles.page}>
@@ -106,22 +107,54 @@ const Home = () => {
       <Navbar />
       <div style={styles.container}>
 
-        {/* Page header */}
+        {/* ── Page header + inline filter ──────────────────────────────────── */}
         <div style={styles.header}>
           <div>
             <h1 style={styles.heading}>Your Library</h1>
             <p style={styles.subheading}>{songs.length} songs available</p>
           </div>
-          <SearchBar />
+
+          {/* Inline filter — purely local, NEVER navigates */}
+          <div style={{
+            ...styles.searchWrap,
+            borderColor: searchFocused ? '#22c55e' : '#2d2d2d',
+            boxShadow:   searchFocused ? '0 0 0 3px rgba(34,197,94,0.1)' : 'none',
+          }}>
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none"
+              style={{ flexShrink: 0, color: searchFocused ? '#22c55e' : '#6b7280', transition: 'color 0.2s' }}>
+              <circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" strokeWidth="1.5"/>
+              <path d="M14 14l3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+            <input
+              type="text"
+              placeholder="Filter songs or artists…"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setSearchFocused(false)}
+              style={styles.searchInput}
+              autoComplete="off"
+              spellCheck={false}
+            />
+            {searchText.length > 0 && (
+              <button
+                onClick={() => setSearchText('')}
+                style={styles.clearBtn}
+                aria-label="Clear filter"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="18" y1="6" x2="6" y2="18"/>
+                  <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* ── Featured / Pinned Songs ─────────────────────────────────────── */}
-        {featuredSongs.length > 0 && (
+        {/* ── Featured / Pinned Songs (hidden while filtering) ─────────────── */}
+        {featuredSongs.length > 0 && !searchText && (
           <div style={styles.section}>
-            <h2 style={styles.sectionTitle}>
-              <StarIcon />
-              Featured
-            </h2>
+            <h2 style={styles.sectionTitle}><StarIcon /> Featured</h2>
             <div style={styles.featuredGrid}>
               {featuredSongs.map((song) => {
                 const active = currentSong?.id === song.id;
@@ -163,13 +196,10 @@ const Home = () => {
           </div>
         )}
 
-        {/* ── Recently Played ─────────────────────────────────────────────── */}
-        {recentSongs.length > 0 && (
+        {/* ── Recently Played (hidden while filtering) ─────────────────────── */}
+        {recentSongs.length > 0 && !searchText && (
           <div style={styles.section}>
-            <h2 style={styles.sectionTitle}>
-              <ClockIcon />
-              Recently Played
-            </h2>
+            <h2 style={styles.sectionTitle}><ClockIcon /> Recently Played</h2>
             <div style={styles.recentScroll}>
               {recentSongs.map((song) => (
                 <div
@@ -194,13 +224,10 @@ const Home = () => {
           </div>
         )}
 
-        {/* ── Featured Playlists ───────────────────────────────────────────── */}
-        {featuredPlaylists.length > 0 && (
+        {/* ── Featured Playlists (hidden while filtering) ──────────────────── */}
+        {featuredPlaylists.length > 0 && !searchText && (
           <div style={styles.section}>
-            <h2 style={styles.sectionTitle}>
-              <PlaylistIcon />
-              Featured Playlists
-            </h2>
+            <h2 style={styles.sectionTitle}><PlaylistIcon /> Featured Playlists</h2>
             <div style={styles.recentScroll}>
               {featuredPlaylists.map((pl) => (
                 <Link
@@ -223,8 +250,8 @@ const Home = () => {
           </div>
         )}
 
-        {/* ── Genre Pills ─────────────────────────────────────────────────── */}
-        {genres.length > 1 && (
+        {/* ── Genre Pills (hidden while filtering) ─────────────────────────── */}
+        {genres.length > 1 && !searchText && (
           <div style={styles.pillsRow}>
             {genres.map((g) => (
               <button
@@ -238,8 +265,18 @@ const Home = () => {
           </div>
         )}
 
+        {/* ── Filter result count ───────────────────────────────────────────── */}
+        {searchText.trim().length >= 1 && (
+          <p style={styles.filterInfo}>
+            {filtered.length === 0
+              ? `No songs match "${searchText}"`
+              : `${filtered.length} song${filtered.length === 1 ? '' : 's'} match "${searchText}"`}
+          </p>
+        )}
+
         {/* ── Song grid ───────────────────────────────────────────────────── */}
         <SongList songs={filtered} />
+
       </div>
       <div style={{ height: 88 }} />
     </div>
@@ -257,21 +294,41 @@ const PauseIcon     = () => <svg width="16" height="16" viewBox="0 0 24 24" fill
 const styles = {
   page:      { minHeight: '100vh', background: '#0f0f0f', fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif" },
   container: { maxWidth: '1200px', margin: '0 auto', padding: '32px 20px 0' },
+
   header:    { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 24 },
   heading:   { color: '#fff', fontSize: 22, fontWeight: 700, letterSpacing: '-0.3px', marginBottom: 4 },
   subheading:{ color: '#6b7280', fontSize: 13 },
 
-  // Error state
+  searchWrap: {
+    display: 'flex', alignItems: 'center', gap: 10,
+    background: '#1a1a1a', border: '1px solid #2d2d2d',
+    borderRadius: 10, padding: '0 12px', height: 42,
+    width: '100%', maxWidth: 340,
+    transition: 'border-color 0.2s, box-shadow 0.2s',
+  },
+  searchInput: {
+    flex: 1, background: 'transparent', border: 'none', outline: 'none',
+    color: '#fff', fontSize: 14,
+    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+  },
+  clearBtn: {
+    background: 'none', border: 'none', color: '#6b7280',
+    cursor: 'pointer', padding: 2, display: 'flex',
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+
+  filterInfo: { color: '#6b7280', fontSize: 13, marginBottom: 16 },
+
   errorWrap:  { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: 12 },
   errorTitle: { color: '#fff', fontSize: 16, fontWeight: 600 },
   errorSub:   { color: '#6b7280', fontSize: 13 },
   retryBtn:   { background: '#22c55e', color: '#000', border: 'none', borderRadius: 8, padding: '10px 24px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' },
 
-  section:     { marginBottom: 28 },
-  sectionTitle:{ display: 'flex', alignItems: 'center', color: '#9ca3af', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 12 },
+  section:      { marginBottom: 28 },
+  sectionTitle: { display: 'flex', alignItems: 'center', color: '#9ca3af', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 12 },
 
-  featuredGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 },
-  featuredCard: { display: 'flex', alignItems: 'center', gap: 12, background: '#1a1a1a', border: '1px solid #2d2d2d', borderRadius: 10, padding: 10, cursor: 'pointer', transition: 'background 0.15s, outline 0.15s', overflow: 'hidden' },
+  featuredGrid:    { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 },
+  featuredCard:    { display: 'flex', alignItems: 'center', gap: 12, background: '#1a1a1a', border: '1px solid #2d2d2d', borderRadius: 10, padding: 10, cursor: 'pointer', transition: 'background 0.15s, outline 0.15s', overflow: 'hidden' },
   featuredImgWrap: { position: 'relative', flexShrink: 0 },
   featuredImg:     { width: 52, height: 52, borderRadius: 8, objectFit: 'cover', display: 'block' },
   featuredOverlay: { position: 'absolute', inset: 0, borderRadius: 8, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity 0.2s' },
