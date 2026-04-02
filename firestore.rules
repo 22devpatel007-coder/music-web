@@ -1,0 +1,104 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // HELPER FUNCTIONS
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuth() && request.auth.token.role == 'admin';
+    }
+
+    function isOwner(uid) {
+      return isAuth() && request.auth.uid == uid;
+    }
+
+    function changedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // USERS  /users/{userId}
+    // ─────────────────────────────────────────────────────────────────────────
+    match /users/{userId} {
+
+      allow read: if isOwner(userId) || isAdmin();
+
+      // CREATE: must be own doc, role must start as 'user' (blocks self-promotion)
+      allow create: if isOwner(userId)
+        && request.resource.data.uid   == userId
+        && request.resource.data.role  == 'user'
+        && request.resource.data.email is string
+        && request.resource.data.email.size() > 0;
+
+      // UPDATE: own doc can change anything EXCEPT uid / email / role / createdAt
+      // Admin can change anything including role
+      allow update: if isAdmin()
+        || (isOwner(userId)
+            && !changedKeys().hasAny(['uid', 'email', 'role', 'createdAt']));
+
+      // DELETE: admin only
+      allow delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // SONGS  /songs/{songId}
+    // ─────────────────────────────────────────────────────────────────────────
+    match /songs/{songId} {
+
+      allow read: if isAuth();
+
+      allow create: if isAdmin()
+        && request.resource.data.title   is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.artist  is string
+        && request.resource.data.genre   is string
+        && request.resource.data.fileUrl is string;
+
+      allow delete: if isAdmin();
+
+      // PERMANENT FIX: old rules blocked all non-admin updates, which meant
+      // PlayerContext.js's client-side increment(1) silently failed for every
+      // regular user. Now regular users may update ONLY playCount, and ONLY
+      // by exactly +1. Admin can update any field freely.
+      allow update: if isAdmin()
+        || (isAuth()
+            && changedKeys().hasOnly(['playCount'])
+            && request.resource.data.playCount == resource.data.playCount + 1);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // PLAYLISTS  /playlists/{playlistId}
+    // ─────────────────────────────────────────────────────────────────────────
+    match /playlists/{playlistId} {
+
+      // Public playlists readable by anyone; private only by owner or admin
+      allow read: if resource.data.isPublic == true
+        || isOwner(resource.data.ownerId)
+        || isAdmin();
+
+      // CREATE: ownerId must match the caller; isFeatured must start false
+      // (only admin can feature a playlist via an update later)
+      allow create: if isAuth()
+        && request.resource.data.ownerId    == request.auth.uid
+        && request.resource.data.isFeatured == false
+        && request.resource.data.name       is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 80;
+
+      // UPDATE: owner can change anything except ownerId and isFeatured
+      // Admin can change anything (including marking isFeatured = true)
+      allow update: if isAdmin()
+        || (isOwner(resource.data.ownerId)
+            && !changedKeys().hasAny(['ownerId', 'isFeatured']));
+
+      allow delete: if isOwner(resource.data.ownerId) || isAdmin();
+    }
+
+  }
+}

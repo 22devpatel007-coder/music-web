@@ -6,9 +6,13 @@
 // Fix: input value is purely local React state. URL update happens via a 300ms debounced
 // useEffect only. Suggestion dropdown reads from SongsContext (zero network calls).
 // The keyboard never closes because nothing navigates while the user is typing.
+//
+// PERMANENT FIX 2: The empty-query useEffect was calling navigate('/search') unconditionally,
+// which caused ANY page that renders <SearchBar /> (e.g. Home) to immediately redirect
+// to /search on mount. Fixed by only navigating to /search when already on /search.
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useSongs } from '../context/SongsContext';
 import { usePlayer } from '../context/PlayerContext';
 
@@ -59,7 +63,10 @@ const SearchBar = () => {
   const { songs }    = useSongs();
   const { playSong } = usePlayer();
   const navigate     = useNavigate();
+  const location     = useLocation();
   const [searchParams] = useSearchParams();
+
+  const isOnSearchPage = location.pathname === '/search';
 
   // Local input state — decoupled from URL
   const [query,        setQuery]        = useState(searchParams.get('q') || '');
@@ -98,12 +105,21 @@ const SearchBar = () => {
   }, [focused, query]);
 
   // ── Debounced URL update — never fires inside onChange ────────────────────
+  // PERMANENT FIX: Only navigate to /search when already on the search page.
+  // If SearchBar is mounted on Home or any other page, an empty query must NOT
+  // redirect the user away. We only update the URL when the user is already on
+  // /search, keeping Home (and any other host page) unaffected.
   useEffect(() => {
     clearTimeout(debounceRef.current);
+
     if (!query.trim()) {
-      navigate('/search', { replace: true });
+      // Only clear the search URL if we're already on /search
+      if (isOnSearchPage) {
+        navigate('/search', { replace: true });
+      }
       return;
     }
+
     debounceRef.current = setTimeout(() => {
       if (query.trim().length >= 2) {
         navigate(`/search?q=${encodeURIComponent(query.trim())}`, { replace: true });
@@ -111,7 +127,7 @@ const SearchBar = () => {
     }, DEBOUNCE_MS);
 
     return () => clearTimeout(debounceRef.current);
-  }, [query]); // intentionally omit navigate to avoid re-running
+  }, [query, isOnSearchPage]); // intentionally omit navigate
 
   // ── Click outside to close ────────────────────────────────────────────────
   useEffect(() => {
@@ -148,7 +164,9 @@ const SearchBar = () => {
     setQuery('');
     setSuggestions([]);
     setShowDropdown(false);
-    navigate('/search', { replace: true });
+    if (isOnSearchPage) {
+      navigate('/search', { replace: true });
+    }
     inputRef.current?.focus();
   };
 

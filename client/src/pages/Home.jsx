@@ -1,28 +1,21 @@
-// PERMANENT FIX: This file fetches songs directly via axiosInstance.
-// Do NOT import useSongs from SongsContext here — SongsContext (if it exists
-// in your project) may return undefined when used outside its Provider,
-// causing "Cannot destructure property 'songs' of undefined".
-// All data fetching is self-contained in this component.
+// PERMANENT FIX 1: Replaced direct axiosInstance fetch with useSongs() from SongsContext.
+// Root cause of blank page: axiosInstance fired before Firebase resolved the auth token,
+// server returned 304 with empty body, setSongs([]) was called silently.
+// SongsContext already defers its fetch correctly and caches the result.
+//
+// PERMANENT FIX 2: SearchBar no longer redirects to /search from Home.
+// That fix lives in SearchBar.jsx (isOnSearchPage guard).
+
 import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
-import axiosInstance from '../utils/axiosInstance';
 import Navbar from '../components/Navbar';
 import SongList from '../components/SongList';
 import SearchBar from '../components/SearchBar';
 import Loader from '../components/Loader';
 import { usePlayer } from '../context/PlayerContext';
-
-/**
- * Home page — now includes a "Featured" pinned songs row.
- *
- * PERMANENT SOLUTION:
- * - Featured songs come from the same /api/songs response (no extra request).
- *   `song.featured === true` is set via PATCH /api/songs/:id from the admin.
- * - No Firestore composite index needed for this — it's a client-side filter.
- * - The featured section only renders when ≥1 featured song exists.
- */
+import { useSongs } from '../context/SongsContext';
 
 const fmtDuration = (secs) => {
   if (!secs && secs !== 0) return null;
@@ -34,25 +27,12 @@ const fmtDuration = (secs) => {
 };
 
 const Home = () => {
-  const [songs,    setSongs]    = useState([]);
-  const [loading,  setLoading]  = useState(true);
+  // PERMANENT FIX: Use SongsContext — single fetch, shared cache, no auth-timing race.
+  const { songs, loading, error, refetch } = useSongs();
+
   const [activeGenre, setActiveGenre] = useState('All');
   const [featuredPlaylists, setFeaturedPlaylists] = useState([]);
   const { recentlyPlayed, playSong, currentSong, isPlaying } = usePlayer();
-
-  /* ── Fetch songs ─────────────────────────────────────────────────────────── */
-  useEffect(() => {
-    const fetchSongs = async () => {
-      try {
-        const res = await axiosInstance.get('/api/songs');
-        setSongs(res.data);
-      } catch (err) {
-        console.error('Failed to fetch songs:', err);
-      }
-      setLoading(false);
-    };
-    fetchSongs();
-  }, []);
 
   /* ── Featured playlists (Firestore) ─────────────────────────────────────── */
   useEffect(() => {
@@ -91,13 +71,11 @@ const Home = () => {
     [songs, activeGenre]
   );
 
-  // Admin-featured songs — max 10, newest first
   const featuredSongs = useMemo(
     () => songs.filter((s) => s.featured === true).slice(0, 10),
     [songs]
   );
 
-  // Recently played songs that exist in the current library
   const recentSongs = useMemo(() => {
     if (!recentlyPlayed.length || !songs.length) return [];
     return recentlyPlayed
@@ -107,6 +85,21 @@ const Home = () => {
   }, [recentlyPlayed, songs]);
 
   if (loading) return <Loader />;
+
+  // PERMANENT FIX: Show a proper error state with Retry button instead of
+  // silently rendering an empty library when the fetch fails.
+  if (error) {
+    return (
+      <div style={styles.page}>
+        <Navbar />
+        <div style={styles.errorWrap}>
+          <p style={styles.errorTitle}>Could not load your library</p>
+          <p style={styles.errorSub}>{error}</p>
+          <button onClick={refetch} style={styles.retryBtn}>Retry</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.page}>
@@ -149,7 +142,6 @@ const Home = () => {
                         style={styles.featuredImg}
                         onError={(e) => { e.target.src = 'https://placehold.co/120x120/1a1a1a/555?text=♪'; }}
                       />
-                      {/* Play overlay */}
                       <div style={styles.featuredOverlay}>
                         {active && isPlaying ? <PauseIcon /> : <PlayIconSmall />}
                       </div>
@@ -255,11 +247,11 @@ const Home = () => {
 };
 
 /* ── Icons ────────────────────────────────────────────────────────────────── */
-const StarIcon     = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1" style={{ marginRight: 6, color: '#f59e0b' }}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>;
-const ClockIcon    = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6 }}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
-const PlaylistIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6 }}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>;
+const StarIcon      = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1" style={{ marginRight: 6, color: '#f59e0b' }}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>;
+const ClockIcon     = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6 }}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
+const PlaylistIcon  = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6 }}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>;
 const PlayIconSmall = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="#000"><path d="M8 5.14v14l11-7-11-7z"/></svg>;
-const PauseIcon    = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="#000"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>;
+const PauseIcon     = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="#000"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>;
 
 /* ── Styles ──────────────────────────────────────────────────────────────── */
 const styles = {
@@ -269,44 +261,27 @@ const styles = {
   heading:   { color: '#fff', fontSize: 22, fontWeight: 700, letterSpacing: '-0.3px', marginBottom: 4 },
   subheading:{ color: '#6b7280', fontSize: 13 },
 
+  // Error state
+  errorWrap:  { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: 12 },
+  errorTitle: { color: '#fff', fontSize: 16, fontWeight: 600 },
+  errorSub:   { color: '#6b7280', fontSize: 13 },
+  retryBtn:   { background: '#22c55e', color: '#000', border: 'none', borderRadius: 8, padding: '10px 24px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' },
+
   section:     { marginBottom: 28 },
   sectionTitle:{ display: 'flex', alignItems: 'center', color: '#9ca3af', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 12 },
 
-  /* Featured grid — horizontal cards */
-  featuredGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-    gap: 12,
-  },
-  featuredCard: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-    background: '#1a1a1a',
-    border: '1px solid #2d2d2d',
-    borderRadius: 10,
-    padding: 10,
-    cursor: 'pointer',
-    transition: 'background 0.15s, outline 0.15s',
-    overflow: 'hidden',
-  },
+  featuredGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 },
+  featuredCard: { display: 'flex', alignItems: 'center', gap: 12, background: '#1a1a1a', border: '1px solid #2d2d2d', borderRadius: 10, padding: 10, cursor: 'pointer', transition: 'background 0.15s, outline 0.15s', overflow: 'hidden' },
   featuredImgWrap: { position: 'relative', flexShrink: 0 },
   featuredImg:     { width: 52, height: 52, borderRadius: 8, objectFit: 'cover', display: 'block' },
-  featuredOverlay: {
-    position: 'absolute', inset: 0, borderRadius: 8,
-    background: 'rgba(0,0,0,0.45)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    opacity: 0,
-    transition: 'opacity 0.2s',
-  },
-  featuredInfo:  { flex: 1, minWidth: 0 },
-  featuredTitle: { fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 2 },
-  featuredArtist:{ color: '#6b7280', fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 5 },
-  featuredMeta:  { display: 'flex', alignItems: 'center', gap: 6 },
-  featuredGenre: { background: 'rgba(34,197,94,0.1)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 4, padding: '1px 6px', fontSize: 10, fontWeight: 500 },
-  featuredDur:   { color: '#4b5563', fontSize: 11 },
+  featuredOverlay: { position: 'absolute', inset: 0, borderRadius: 8, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity 0.2s' },
+  featuredInfo:    { flex: 1, minWidth: 0 },
+  featuredTitle:   { fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 2 },
+  featuredArtist:  { color: '#6b7280', fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 5 },
+  featuredMeta:    { display: 'flex', alignItems: 'center', gap: 6 },
+  featuredGenre:   { background: 'rgba(34,197,94,0.1)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 4, padding: '1px 6px', fontSize: 10, fontWeight: 500 },
+  featuredDur:     { color: '#4b5563', fontSize: 11 },
 
-  /* Recently played / playlist chips */
   recentScroll: { display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6, scrollbarWidth: 'none', msOverflowStyle: 'none' },
   recentChip:   { display: 'flex', alignItems: 'center', gap: 10, background: '#1a1a1a', border: '1px solid #2d2d2d', borderRadius: 8, padding: '8px 12px 8px 8px', cursor: 'pointer', flexShrink: 0, minWidth: 160, maxWidth: 200, transition: 'background 0.15s' },
   recentCover:  { width: 36, height: 36, borderRadius: 6, objectFit: 'cover', flexShrink: 0 },
@@ -314,10 +289,9 @@ const styles = {
   recentTitle:  { color: '#fff', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   recentArtist: { color: '#6b7280', fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
 
-  /* Genre pills */
-  pillsRow:  { display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 24 },
-  pill:      { background: '#1a1a1a', border: '1px solid #2d2d2d', color: '#9ca3af', borderRadius: 20, padding: '6px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s', fontFamily: 'inherit' },
-  pillActive:{ background: 'rgba(34,197,94,0.1)', borderColor: '#22c55e', color: '#22c55e' },
+  pillsRow:   { display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 24 },
+  pill:       { background: '#1a1a1a', border: '1px solid #2d2d2d', color: '#9ca3af', borderRadius: 20, padding: '6px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s', fontFamily: 'inherit' },
+  pillActive: { background: 'rgba(34,197,94,0.1)', borderColor: '#22c55e', color: '#22c55e' },
 };
 
 export default Home;
