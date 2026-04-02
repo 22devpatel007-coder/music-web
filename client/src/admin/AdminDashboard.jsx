@@ -45,9 +45,6 @@ const AdminDashboard = () => {
   songs.forEach((s) => { if (s.genre) genreMap[s.genre] = (genreMap[s.genre] || 0) + 1; });
   const genreData = Object.entries(genreMap).map(([name, value]) => ({ name, value }));
 
-  // FIX: buildMonthlyData now parses ISO strings (from serializeSong/serializeUser)
-  // instead of trying to call .toDate() on Firestore Timestamp objects that
-  // don't survive JSON serialization.
   const uploadsByMonth = buildMonthlyData(songs, "createdAt", "uploads");
   const usersByMonth   = buildMonthlyData(users, "createdAt", "users");
 
@@ -70,9 +67,11 @@ const AdminDashboard = () => {
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>Quick Actions</h2>
           <div style={styles.actionsRow}>
-            <ActionLink to="/admin/upload" primary label="Upload Song"   desc="Add new music"          icon={<UploadIcon />} />
-            <ActionLink to="/admin/songs"        label="Manage Songs"  desc="View & delete tracks"    icon={<MusicIcon />} />
-            <ActionLink to="/admin/users"        label="View Users"    desc="All registered accounts" icon={<UsersIcon />} />
+            <ActionLink to="/admin/upload"          primary label="Upload Song"     desc="Add a single track"          icon={<UploadIcon />} />
+            <ActionLink to="/admin/upload-playlist"        label="Upload Playlist"  desc="ZIP → library playlist"      icon={<PlaylistIcon />} />
+            <ActionLink to="/admin/bulk-upload"            label="Bulk Upload"      desc="Multiple songs at once"      icon={<UploadIcon />} />
+            <ActionLink to="/admin/songs"                  label="Manage Songs"     desc="View & delete tracks"        icon={<MusicIcon />} />
+            <ActionLink to="/admin/users"                  label="View Users"       desc="All registered accounts"    icon={<UsersIcon />} />
           </div>
         </div>
 
@@ -177,10 +176,7 @@ const AdminDashboard = () => {
   );
 };
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-// FIX: Handles ISO date strings (from API) as well as plain Date objects.
-// Previously tried raw?.toDate() which only works on live Firestore Timestamps.
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function buildMonthlyData(items, dateField, key) {
   const months = [];
   const now = new Date();
@@ -191,7 +187,7 @@ function buildMonthlyData(items, dateField, key) {
   items.forEach((item) => {
     const raw = item[dateField];
     if (!raw) return;
-    const d = new Date(raw); // Works for ISO strings, epoch numbers, and Date objects
+    const d = new Date(raw);
     if (isNaN(d.getTime())) return;
     const entry = months.find(m => m.m === d.getMonth() && m.year === d.getFullYear());
     if (entry) entry[key]++;
@@ -224,44 +220,45 @@ const ActionLink = ({ to, label, desc, icon, primary }) => (
 );
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
-const MusicIcon  = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>;
-const UsersIcon  = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
-const PlayIcon   = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>;
-const TagIcon    = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>;
-const UploadIcon = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>;
+const MusicIcon    = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>;
+const UsersIcon    = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
+const PlayIcon     = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>;
+const TagIcon      = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>;
+const UploadIcon   = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>;
+const PlaylistIcon = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>;
 
 const styles = {
-  page: { minHeight: "100vh", background: "#0f0f0f", fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif" },
-  container: { maxWidth: "1000px", margin: "0 auto", padding: "32px 20px 80px" },
-  pageHeader: { marginBottom: "28px" },
-  heading: { color: "#fff", fontSize: "22px", fontWeight: "700", letterSpacing: "-0.3px", marginBottom: "4px" },
-  subheading: { color: "#6b7280", fontSize: "13px" },
-  statsRow: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "14px", marginBottom: "32px" },
-  statCard: { background: "#1a1a1a", border: "1px solid #2d2d2d", borderRadius: "12px", padding: "20px", display: "flex", alignItems: "center", gap: "14px" },
-  statIconWrap: { width: "44px", height: "44px", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "#fff" },
-  statValue: { fontSize: "28px", fontWeight: "800", letterSpacing: "-1px", lineHeight: 1, marginBottom: "4px" },
-  statLabel: { color: "#6b7280", fontSize: "12px" },
-  section: { marginBottom: "32px" },
-  sectionTitle: { color: "#9ca3af", fontSize: "12px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "14px" },
-  actionsRow: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "12px" },
-  actionCard: { background: "#1a1a1a", border: "1px solid #2d2d2d", borderRadius: "12px", padding: "18px", textDecoration: "none", display: "flex", flexDirection: "column", gap: "10px", transition: "border-color 0.2s" },
+  page:           { minHeight: "100vh", background: "#0f0f0f", fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif" },
+  container:      { maxWidth: "1000px", margin: "0 auto", padding: "32px 20px 80px" },
+  pageHeader:     { marginBottom: "28px" },
+  heading:        { color: "#fff", fontSize: "22px", fontWeight: "700", letterSpacing: "-0.3px", marginBottom: "4px" },
+  subheading:     { color: "#6b7280", fontSize: "13px" },
+  statsRow:       { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "14px", marginBottom: "32px" },
+  statCard:       { background: "#1a1a1a", border: "1px solid #2d2d2d", borderRadius: "12px", padding: "20px", display: "flex", alignItems: "center", gap: "14px" },
+  statIconWrap:   { width: "44px", height: "44px", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "#fff" },
+  statValue:      { fontSize: "28px", fontWeight: "800", letterSpacing: "-1px", lineHeight: 1, marginBottom: "4px" },
+  statLabel:      { color: "#6b7280", fontSize: "12px" },
+  section:        { marginBottom: "32px" },
+  sectionTitle:   { color: "#9ca3af", fontSize: "12px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "14px" },
+  actionsRow:     { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "12px" },
+  actionCard:     { background: "#1a1a1a", border: "1px solid #2d2d2d", borderRadius: "12px", padding: "18px", textDecoration: "none", display: "flex", flexDirection: "column", gap: "10px", transition: "border-color 0.2s" },
   actionCardPrimary: { background: "rgba(34,197,94,0.08)", borderColor: "rgba(34,197,94,0.3)" },
-  actionIcon: { width: "34px", height: "34px", background: "#2d2d2d", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af" },
+  actionIcon:     { width: "34px", height: "34px", background: "#2d2d2d", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af" },
   actionIconPrimary: { background: "#22c55e", color: "#000" },
-  actionLabel: { color: "#fff", fontSize: "14px", fontWeight: "600", marginBottom: "2px" },
+  actionLabel:    { color: "#fff", fontSize: "14px", fontWeight: "600", marginBottom: "2px" },
   actionLabelPrimary: { color: "#22c55e" },
-  actionDesc: { color: "#6b7280", fontSize: "12px" },
-  chartsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "14px", marginBottom: "16px" },
-  chartCard: { background: "#1a1a1a", border: "1px solid #2d2d2d", borderRadius: "12px", padding: "20px" },
-  chartTitle: { color: "#9ca3af", fontSize: "12px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "16px" },
-  recentList: { background: "#1a1a1a", border: "1px solid #2d2d2d", borderRadius: "12px", overflow: "hidden" },
-  recentItem: { display: "flex", alignItems: "center", gap: "12px", padding: "12px 16px", borderBottom: "1px solid #2d2d2d" },
-  recentCover: { width: "40px", height: "40px", borderRadius: "7px", objectFit: "cover", background: "#111", flexShrink: 0 },
-  recentInfo: { flex: 1, minWidth: 0 },
-  recentTitle: { color: "#fff", fontSize: "13px", fontWeight: "600", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
-  recentArtist: { color: "#6b7280", fontSize: "11px" },
-  recentGenre: { background: "rgba(34,197,94,0.1)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.2)", borderRadius: "4px", padding: "2px 8px", fontSize: "11px", fontWeight: "500", flexShrink: 0 },
-  empty: { color: "#6b7280", fontSize: "14px" },
+  actionDesc:     { color: "#6b7280", fontSize: "12px" },
+  chartsGrid:     { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "14px", marginBottom: "16px" },
+  chartCard:      { background: "#1a1a1a", border: "1px solid #2d2d2d", borderRadius: "12px", padding: "20px" },
+  chartTitle:     { color: "#9ca3af", fontSize: "12px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "16px" },
+  recentList:     { background: "#1a1a1a", border: "1px solid #2d2d2d", borderRadius: "12px", overflow: "hidden" },
+  recentItem:     { display: "flex", alignItems: "center", gap: "12px", padding: "12px 16px", borderBottom: "1px solid #2d2d2d" },
+  recentCover:    { width: "40px", height: "40px", borderRadius: "7px", objectFit: "cover", background: "#111", flexShrink: 0 },
+  recentInfo:     { flex: 1, minWidth: 0 },
+  recentTitle:    { color: "#fff", fontSize: "13px", fontWeight: "600", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+  recentArtist:   { color: "#6b7280", fontSize: "11px" },
+  recentGenre:    { background: "rgba(34,197,94,0.1)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.2)", borderRadius: "4px", padding: "2px 8px", fontSize: "11px", fontWeight: "500", flexShrink: 0 },
+  empty:          { color: "#6b7280", fontSize: "14px" },
 };
 
 export default AdminDashboard;

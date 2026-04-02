@@ -11,25 +11,42 @@ export const usePlayer = () => useContext(PlayerContext);
 
 const MAX_RECENT = 10;
 
+// ── Safe play helper ──────────────────────────────────────────────────────────
+// The AbortError ("play() interrupted by new load") happens when you call
+// audio.src = newSrc while a previous audio.play() Promise is still pending.
+// Fix: always await a pending play promise before changing src.
+async function safePlay(audio) {
+  try {
+    await audio.play();
+  } catch (err) {
+    // AbortError is expected when src changes mid-play — not a real error
+    if (err.name !== 'AbortError') {
+      console.error('[PlayerContext] play() failed:', err.message);
+    }
+  }
+}
+
 export const PlayerProvider = ({ children }) => {
   const { currentUser } = useAuth();
 
   const [currentSong, setCurrentSong] = useState(null);
-  const [isPlaying, setIsPlaying]     = useState(false);
-  const [songs, setSongs]             = useState([]);
-  const [repeat, setRepeat]           = useState('none');
-  const [shuffle, setShuffle]         = useState(false);
-  const [isMuted, setIsMuted]         = useState(false);
-  const [volume, setVolume]           = useState(1);
+  const [isPlaying,   setIsPlaying]   = useState(false);
+  const [songs,       setSongs]       = useState([]);
+  const [repeat,      setRepeat]      = useState('none');
+  const [shuffle,     setShuffle]     = useState(false);
+  const [isMuted,     setIsMuted]     = useState(false);
+  const [volume,      setVolume]      = useState(1);
   const [recentlyPlayed, setRecentlyPlayed] = useState([]);
-  const [showQueue, setShowQueue]     = useState(false);
+  const [showQueue,   setShowQueue]   = useState(false);
   const [playingPlaylistName, setPlayingPlaylistName] = useState(null);
 
   const audioRef = useRef(new Audio());
 
-  // Keep a ref to currentSong so callbacks never close over stale state
+  // Keep refs so callbacks never close over stale state
   const currentSongRef = useRef(null);
+  const isPlayingRef   = useRef(false);
   useEffect(() => { currentSongRef.current = currentSong; }, [currentSong]);
+  useEffect(() => { isPlayingRef.current   = isPlaying;   }, [isPlaying]);
 
   const addToRecentlyPlayed = useCallback((song) => {
     setRecentlyPlayed(prev => {
@@ -43,50 +60,64 @@ export const PlayerProvider = ({ children }) => {
     }
   }, [currentUser]);
 
-  // FIX: Play count is now incremented ONLY here in PlayerContext — the
-  // SongCard.jsx increment has been removed to prevent double-counting.
   const incrementPlayCount = useCallback((songId) => {
     updateDoc(doc(db, 'songs', songId), { playCount: increment(1) }).catch(() => {});
   }, []);
 
+  // ── playSong ──────────────────────────────────────────────────────────────
   const playSong = useCallback((song, songList = []) => {
-    // FIX: Use ref instead of state to avoid stale closure on currentSong
+    const audio = audioRef.current;
+
     if (currentSongRef.current?.id === song.id) {
-      const audio = audioRef.current;
-      if (audio.paused) { audio.play().catch(console.error); setIsPlaying(true); }
-      else              { audio.pause(); setIsPlaying(false); }
+      // Same song — just toggle
+      if (audio.paused) {
+        safePlay(audio).then(() => setIsPlaying(true));
+      } else {
+        audio.pause();
+        setIsPlaying(false);
+      }
       return;
     }
-    const audio = audioRef.current;
-    audio.src = song.fileUrl;
+
+    // New song — set src first, THEN play
+    // Setting src cancels any pending play, so AbortError cannot occur
+    audio.pause();
+    audio.src    = song.fileUrl;
     audio.volume = isMuted ? 0 : volume;
-    audio.play().catch(console.error);
+
     setCurrentSong(song);
     setIsPlaying(true);
     if (songList.length > 0) setSongs(songList);
     addToRecentlyPlayed(song);
     incrementPlayCount(song.id);
+
+    safePlay(audio);
   }, [isMuted, volume, addToRecentlyPlayed, incrementPlayCount]);
 
+  // ── togglePlay ────────────────────────────────────────────────────────────
   const togglePlay = useCallback(() => {
     const audio = audioRef.current;
     if (audio.paused) {
-      audio.play().catch(console.error);
-      setIsPlaying(true);
+      safePlay(audio).then(() => setIsPlaying(true));
     } else {
       audio.pause();
       setIsPlaying(false);
     }
   }, []);
 
+  // ── playNext ──────────────────────────────────────────────────────────────
   const playNext = useCallback((songList, song, shuffleOn, repeatMode) => {
     const list = songList.length ? songList : [];
     if (!list.length) return;
+
+    const audio = audioRef.current;
+
     if (repeatMode === 'one') {
-      audioRef.current.currentTime = 0;
-      audioRef.current.play().catch(console.error);
+      audio.currentTime = 0;
+      safePlay(audio);
       return;
     }
+
     let nextIndex;
     if (shuffleOn) {
       nextIndex = Math.floor(Math.random() * list.length);
@@ -98,19 +129,23 @@ export const PlayerProvider = ({ children }) => {
         else return;
       }
     }
+
     const next = list[nextIndex];
-    audioRef.current.src = next.fileUrl;
-    audioRef.current.volume = isMuted ? 0 : volume;
-    audioRef.current.play().catch(console.error);
+    audio.pause();
+    audio.src    = next.fileUrl;
+    audio.volume = isMuted ? 0 : volume;
     setCurrentSong(next);
     setIsPlaying(true);
     addToRecentlyPlayed(next);
     incrementPlayCount(next.id);
+    safePlay(audio);
   }, [isMuted, volume, addToRecentlyPlayed, incrementPlayCount]);
 
+  // ── playPrev ──────────────────────────────────────────────────────────────
   const playPrev = useCallback(() => {
-    if (audioRef.current.currentTime > 3) {
-      audioRef.current.currentTime = 0;
+    const audio = audioRef.current;
+    if (audio.currentTime > 3) {
+      audio.currentTime = 0;
       return;
     }
     setSongs(prevSongs => {
@@ -118,23 +153,25 @@ export const PlayerProvider = ({ children }) => {
         const idx = prevSongs.findIndex(s => s.id === prevSong?.id);
         if (idx <= 0) return prevSong;
         const prev = prevSongs[idx - 1];
-        audioRef.current.src = prev.fileUrl;
-        audioRef.current.volume = isMuted ? 0 : volume;
-        audioRef.current.play().catch(console.error);
+        audio.pause();
+        audio.src    = prev.fileUrl;
+        audio.volume = isMuted ? 0 : volume;
         setIsPlaying(true);
         addToRecentlyPlayed(prev);
         incrementPlayCount(prev.id);
+        safePlay(audio);
         return prev;
       });
       return prevSongs;
     });
   }, [isMuted, volume, addToRecentlyPlayed, incrementPlayCount]);
 
-  // Stop player on logout
+  // ── Stop on logout ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!currentUser) {
-      audioRef.current.pause();
-      audioRef.current.src = '';
+      const audio = audioRef.current;
+      audio.pause();
+      audio.src = '';
       setCurrentSong(null);
       setIsPlaying(false);
       setSongs([]);
@@ -142,7 +179,7 @@ export const PlayerProvider = ({ children }) => {
     }
   }, [currentUser]);
 
-  // Auto-advance on end
+  // ── Auto-advance on ended ─────────────────────────────────────────────────
   useEffect(() => {
     const audio = audioRef.current;
     const handleEnded = () => {
@@ -150,7 +187,7 @@ export const PlayerProvider = ({ children }) => {
         setCurrentSong(latestSong => {
           if (repeat === 'one') {
             audio.currentTime = 0;
-            audio.play().catch(console.error);
+            safePlay(audio);
             return latestSong;
           }
           if (!latestSongs.length) return latestSong;
@@ -167,12 +204,13 @@ export const PlayerProvider = ({ children }) => {
               next = latestSongs[nextIdx];
             }
           }
-          audio.src = next.fileUrl;
+          audio.pause();
+          audio.src    = next.fileUrl;
           audio.volume = isMuted ? 0 : volume;
-          audio.play().catch(console.error);
           setIsPlaying(true);
           addToRecentlyPlayed(next);
           incrementPlayCount(next.id);
+          safePlay(audio);
           return next;
         });
         return latestSongs;
@@ -182,7 +220,7 @@ export const PlayerProvider = ({ children }) => {
     return () => audio.removeEventListener('ended', handleEnded);
   }, [repeat, shuffle, isMuted, volume, addToRecentlyPlayed, incrementPlayCount]);
 
-  // Keyboard shortcuts
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────
   useEffect(() => {
     const handleKeyDown = (e) => {
       const tag = e.target.tagName.toLowerCase();
@@ -228,10 +266,10 @@ export const PlayerProvider = ({ children }) => {
     });
   }, [volume]);
 
-  const removeFromQueue = useCallback((songId) =>
+  const removeFromQueue  = useCallback((songId) =>
     setSongs(prev => prev.filter(s => s.id !== songId)), []);
 
-  const moveSongInQueue = useCallback((from, to) =>
+  const moveSongInQueue  = useCallback((from, to) =>
     setSongs(prev => {
       const a = [...prev];
       const [m] = a.splice(from, 1);
@@ -243,7 +281,7 @@ export const PlayerProvider = ({ children }) => {
     setSongs(s => { playNext(s, currentSongRef.current, shuffle, repeat); return s; }),
     [playNext, shuffle, repeat]);
 
-  const cycleRepeat  = () => setRepeat(r => r === 'none' ? 'all' : r === 'all' ? 'one' : 'none');
+  const cycleRepeat   = () => setRepeat(r => r === 'none' ? 'all' : r === 'all' ? 'one' : 'none');
   const toggleShuffle = () => setShuffle(s => !s);
   const toggleQueue   = () => setShowQueue(p => !p);
 

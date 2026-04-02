@@ -8,22 +8,27 @@ import Loader from '../components/Loader';
 
 const PlaylistDetail = () => {
   const { id } = useParams();
-  const { playlists, removeSongFromPlaylist, reorderSongs, updatePlaylist } = usePlaylist();
+  const { playlists, adminPlaylists, removeSongFromPlaylist, reorderSongs, updatePlaylist } = usePlaylist();
   const { playSong, currentSong } = usePlayer();
 
   const [playlist, setPlaylist] = useState(null);
-  const [songs, setSongs]       = useState([]);
-  const [loading, setLoading]   = useState(true);
+  const [songs,    setSongs]    = useState([]);
+  const [loading,  setLoading]  = useState(true);
   const [editMode, setEditMode] = useState(false);
   const [editName, setEditName] = useState('');
 
-  // Find playlist from context (real-time)
+  // Find playlist from either user playlists or admin playlists
   useEffect(() => {
-    const found = playlists.find(p => p.id === id);
-    if (found) { setPlaylist(found); setEditName(found.name); }
-  }, [playlists, id]);
+    const found =
+      playlists.find(p => p.id === id) ||
+      adminPlaylists.find(p => p.id === id);
+    if (found) {
+      setPlaylist(found);
+      setEditName(found.name);
+    }
+  }, [playlists, adminPlaylists, id]);
 
-  // Fetch song objects from API, preserving playlist order
+  // Fetch song objects, preserving playlist order
   useEffect(() => {
     if (!playlist) return;
     if (playlist.songIds.length === 0) { setSongs([]); setLoading(false); return; }
@@ -44,6 +49,9 @@ const PlaylistDetail = () => {
 
   if (loading || !playlist) return <Loader />;
 
+  // Admin playlists are read-only for all users
+  const isReadOnly = playlist.isAdmin === true;
+
   const handlePlayAll = () => {
     if (songs.length) playSong(songs[0], songs);
   };
@@ -55,21 +63,21 @@ const PlaylistDetail = () => {
   };
 
   const handleMoveUp = async (index) => {
-    if (index === 0) return;
+    if (index === 0 || isReadOnly) return;
     const newIds = [...playlist.songIds];
     [newIds[index - 1], newIds[index]] = [newIds[index], newIds[index - 1]];
     await reorderSongs(id, newIds);
   };
 
   const handleMoveDown = async (index) => {
-    if (index === playlist.songIds.length - 1) return;
+    if (index === playlist.songIds.length - 1 || isReadOnly) return;
     const newIds = [...playlist.songIds];
     [newIds[index], newIds[index + 1]] = [newIds[index + 1], newIds[index]];
     await reorderSongs(id, newIds);
   };
 
   const handleSaveEdit = async () => {
-    if (!editName.trim()) return;
+    if (!editName.trim() || isReadOnly) return;
     await updatePlaylist(id, { name: editName.trim() });
     setEditMode(false);
   };
@@ -89,20 +97,38 @@ const PlaylistDetail = () => {
             }
           </div>
           <div style={styles.meta}>
-            <span style={styles.type}>Playlist</span>
-            {editMode ? (
+            <div style={styles.typeRow}>
+              <span style={styles.type}>Playlist</span>
+              {isReadOnly && (
+                <span style={styles.libraryBadge}>Library</span>
+              )}
+            </div>
+
+            {/* Only allow rename for user's own playlists */}
+            {!isReadOnly && editMode ? (
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input value={editName} onChange={e => setEditName(e.target.value)}
-                  style={styles.editInput} autoFocus />
+                <input
+                  value={editName}
+                  onChange={e => setEditName(e.target.value)}
+                  style={styles.editInput}
+                  autoFocus
+                />
                 <button onClick={handleSaveEdit} style={styles.saveBtn}>Save</button>
                 <button onClick={() => setEditMode(false)} style={styles.cancelBtn}>Cancel</button>
               </div>
             ) : (
-              <h1 style={styles.name} onDoubleClick={() => setEditMode(true)}
-                title="Double-click to rename">{playlist.name}</h1>
+              <h1
+                style={styles.name}
+                onDoubleClick={() => !isReadOnly && setEditMode(true)}
+                title={isReadOnly ? '' : 'Double-click to rename'}
+              >
+                {playlist.name}
+              </h1>
             )}
+
             {playlist.description && <p style={styles.desc}>{playlist.description}</p>}
             <p style={styles.count}>{songs.length} songs</p>
+
             {songs.length > 0 && (
               <div style={styles.controls}>
                 <button style={styles.playBtn} onClick={handlePlayAll}>▶ Play</button>
@@ -116,22 +142,27 @@ const PlaylistDetail = () => {
 
         {/* Song list */}
         {songs.length === 0 ? (
-          <p style={styles.empty}>
-            No songs yet. Use the ⋯ menu on any song card to add songs here.
-          </p>
+          <p style={styles.empty}>No songs in this playlist yet.</p>
         ) : (
           <div>
             {songs.map((song, index) => {
               const isActive = currentSong?.id === song.id;
               return (
-                <div key={song.id} style={{
-                  ...styles.songRow,
-                  background: isActive ? 'rgba(34,197,94,0.06)' : 'transparent',
-                }}>
+                <div
+                  key={song.id}
+                  style={{
+                    ...styles.songRow,
+                    background: isActive ? 'rgba(34,197,94,0.06)' : 'transparent',
+                  }}
+                >
                   <span style={styles.rowNum}>{isActive ? '♪' : index + 1}</span>
-                  <img src={song.coverUrl} alt={song.title} style={styles.songCover}
+                  <img
+                    src={song.coverUrl}
+                    alt={song.title}
+                    style={styles.songCover}
                     onClick={() => playSong(song, songs)}
-                    onError={e => { e.target.src = 'https://placehold.co/40x40/111/555?text=♪'; }} />
+                    onError={e => { e.target.src = 'https://placehold.co/40x40/111/555?text=♪'; }}
+                  />
                   <div style={styles.songInfo} onClick={() => playSong(song, songs)}>
                     <p style={{ ...styles.songTitle, color: isActive ? '#22c55e' : '#fff' }}>
                       {song.title}
@@ -139,14 +170,28 @@ const PlaylistDetail = () => {
                     <p style={styles.songArtist}>{song.artist}</p>
                   </div>
                   <span style={styles.songGenre}>{song.genre}</span>
-                  <div style={styles.reorderBtns}>
-                    <button onClick={() => handleMoveUp(index)} style={styles.arrowBtn}
-                      disabled={index === 0}>↑</button>
-                    <button onClick={() => handleMoveDown(index)} style={styles.arrowBtn}
-                      disabled={index === songs.length - 1}>↓</button>
-                  </div>
-                  <button onClick={() => removeSongFromPlaylist(id, song.id)}
-                    style={styles.removeBtn}>✕</button>
+
+                  {/* Reorder + remove — hidden for library playlists */}
+                  {!isReadOnly && (
+                    <>
+                      <div style={styles.reorderBtns}>
+                        <button
+                          onClick={() => handleMoveUp(index)}
+                          style={styles.arrowBtn}
+                          disabled={index === 0}
+                        >↑</button>
+                        <button
+                          onClick={() => handleMoveDown(index)}
+                          style={styles.arrowBtn}
+                          disabled={index === songs.length - 1}
+                        >↓</button>
+                      </div>
+                      <button
+                        onClick={() => removeSongFromPlaylist(id, song.id)}
+                        style={styles.removeBtn}
+                      >✕</button>
+                    </>
+                  )}
                 </div>
               );
             })}
@@ -166,8 +211,10 @@ const styles = {
   cover:           { width: 160, height: 160, borderRadius: 12, objectFit: 'cover', background: '#1a1a1a', boxShadow: '0 12px 40px rgba(0,0,0,0.5)' },
   coverPlaceholder:{ width: 160, height: 160, borderRadius: 12, background: '#1a1a1a', border: '1px solid #2d2d2d', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 48, color: '#4b5563' },
   meta:            { flex: 1, display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 8 },
+  typeRow:         { display: 'flex', alignItems: 'center', gap: 8 },
   type:            { color: '#22c55e', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1px' },
-  name:            { color: '#fff', fontSize: 28, fontWeight: 700, letterSpacing: '-0.5px', cursor: 'pointer' },
+  libraryBadge:    { background: 'rgba(34,197,94,0.1)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 4, padding: '2px 8px', fontSize: 10, fontWeight: 700, letterSpacing: '0.3px' },
+  name:            { color: '#fff', fontSize: 28, fontWeight: 700, letterSpacing: '-0.5px' },
   desc:            { color: '#9ca3af', fontSize: 14 },
   count:           { color: '#6b7280', fontSize: 13 },
   editInput:       { background: '#111', border: '1px solid #22c55e', borderRadius: 8, padding: '8px 12px', color: '#fff', fontSize: 22, fontWeight: 700, outline: 'none', fontFamily: 'inherit' },
