@@ -14,6 +14,22 @@ import { useAuth } from './AuthContext';
 const PlaylistContext = createContext();
 export const usePlaylist = () => useContext(PlaylistContext);
 
+// PERMANENT FIX: Robust Firestore Timestamp → ms conversion.
+// Three cases must be handled:
+//   1. Live Firestore Timestamp   → has .toDate() method
+//   2. IndexedDB-restored object  → plain { _seconds, _nanoseconds } (no .toDate())
+//   3. ISO string / Date / null   → fallback to new Date()
+// Without this, sorting admin playlists returns 0 for all items when data
+// is served from the offline IndexedDB cache (persistentLocalCache), making
+// the sort a silent no-op.
+function tsToMs(v) {
+  if (!v) return 0;
+  if (typeof v.toDate === 'function') return v.toDate().getTime();
+  if (typeof v._seconds === 'number') return v._seconds * 1000 + Math.floor((v._nanoseconds || 0) / 1e6);
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? 0 : d.getTime();
+}
+
 export const PlaylistProvider = ({ children }) => {
   const { currentUser } = useAuth();
   const [playlists,      setPlaylists]      = useState([]);
@@ -57,6 +73,8 @@ export const PlaylistProvider = ({ children }) => {
   // ── Admin / Library playlists ─────────────────────────────────────────────
   // Single-field query on isAdmin only — no composite index needed.
   // isPublic and sort are handled client-side.
+  // PERMANENT FIX: sort uses tsToMs() which handles all three Timestamp forms
+  // (live Firestore Timestamp, IndexedDB-restored plain object, ISO string).
   useEffect(() => {
     const q = query(
       collection(db, 'playlists'),
@@ -68,14 +86,7 @@ export const PlaylistProvider = ({ children }) => {
         const adminOnes = snap.docs
           .map(d => ({ id: d.id, ...d.data() }))
           .filter(p => p.isPublic === true)
-          .sort((a, b) => {
-            const toMs = (v) => {
-              if (!v) return 0;
-              if (v?.toDate) return v.toDate().getTime();
-              return new Date(v).getTime();
-            };
-            return toMs(b.createdAt) - toMs(a.createdAt);
-          });
+          .sort((a, b) => tsToMs(b.createdAt) - tsToMs(a.createdAt));
         setAdminPlaylists(adminOnes);
         setAdminLoading(false);
       },

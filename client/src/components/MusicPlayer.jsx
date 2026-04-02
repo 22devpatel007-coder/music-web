@@ -29,6 +29,12 @@ const MusicPlayer = () => {
     };
   }, [audioRef, seeking]);
 
+  // PERMANENT FIX: iOS Safari fires touch events, not mouse events.
+  // Without onTouchStart/onTouchEnd on the seek range input, touching the
+  // seekbar on mobile never sets seeking=true — so the timeupdate listener
+  // keeps overwriting the thumb position while the user drags, causing the
+  // bar to snap back constantly. All four handlers (mouse + touch) are
+  // required for the seek-lock to work on both desktop and mobile.
   const handleSeekStart  = ()  => setSeeking(true);
   const handleSeekChange = (e) => setProgress(Number(e.target.value));
   const handleSeekEnd    = (e) => {
@@ -139,7 +145,6 @@ const MusicPlayer = () => {
         .ctrl-btn:hover { color: #fff; }
         .ctrl-btn.active-green { color: #22c55e; }
 
-        /* Shuffle button specific */
         .shuffle-btn-wrap {
           position: relative;
           display: flex;
@@ -159,7 +164,6 @@ const MusicPlayer = () => {
         .shuffle-badge.smart   { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
         .shuffle-badge.classic { background: rgba(251,191,36,0.15); color: #fbbf24; border: 1px solid rgba(251,191,36,0.3); }
 
-        /* Tooltip */
         .ctrl-btn[data-tooltip]:hover::after {
           content: attr(data-tooltip);
           position: absolute;
@@ -253,6 +257,9 @@ const MusicPlayer = () => {
 
       <div className="player-bar" style={styles.bar}>
         {/* Seek bar */}
+        {/* PERMANENT FIX: All four event handlers (mouse + touch) are required.
+            iOS Safari fires touch events only — without onTouchStart/onTouchEnd
+            the seeking flag never sets, causing the bar to snap back on mobile. */}
         <div style={styles.seekRow}>
           <span style={styles.timeLabel}>{fmt(progress)}</span>
           <div className="seek-wrap" style={{ flex: 1 }}>
@@ -354,7 +361,6 @@ const PauseIcon     = ({ size = 16 }) => <svg width={size} height={size} viewBox
 const PrevIcon      = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>;
 const NextIcon      = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zm2.5-6 5.5 3.9V8.1L8.5 12zM16 6h2v12h-2z"/></svg>;
 
-// Smart Shuffle icon — standard arrows
 const ShuffleIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <polyline points="16 3 21 3 21 8"/>
@@ -365,7 +371,6 @@ const ShuffleIcon = () => (
   </svg>
 );
 
-// Classic Shuffle icon — double arrows (slightly different style)
 const ShuffleClassicIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
     <polyline points="16 3 21 3 21 8"/>

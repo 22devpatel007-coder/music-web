@@ -1,9 +1,10 @@
 // PERMANENT FIX:
 // - Uses useSongs() from SongsContext (no auth-timing race, no duplicate fetch)
-// - Inline local filter input replaces <SearchBar /> — filters songs in memory,
-//   no navigate(), no URL changes, no redirect to /search ever.
+// - Inline local filter — no navigate(), no redirect to /search ever
+// - Spotify-style search history stored in localStorage (max 8 items)
+//   Shown when input is focused + empty. Clears per-item or all at once.
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -13,6 +14,41 @@ import Loader from '../components/Loader';
 import { usePlayer } from '../context/PlayerContext';
 import { useSongs } from '../context/SongsContext';
 
+const HISTORY_KEY = 'melostream_search_history';
+const MAX_HISTORY = 8;
+
+// ── localStorage helpers ──────────────────────────────────────────────────────
+function readHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function saveHistory(items) {
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(items));
+  } catch { /* storage full — ignore */ }
+}
+
+function addToHistory(song) {
+  const prev    = readHistory().filter((s) => s.id !== song.id);
+  const updated = [
+    { id: song.id, title: song.title, artist: song.artist, coverUrl: song.coverUrl },
+    ...prev,
+  ].slice(0, MAX_HISTORY);
+  saveHistory(updated);
+  return updated;
+}
+
+function removeFromHistory(id) {
+  const updated = readHistory().filter((s) => s.id !== id);
+  saveHistory(updated);
+  return updated;
+}
+
+// ── Duration formatter ────────────────────────────────────────────────────────
 const fmtDuration = (secs) => {
   if (!secs && secs !== 0) return null;
   const n = Number(secs);
@@ -25,13 +61,33 @@ const fmtDuration = (secs) => {
 const Home = () => {
   const { songs, loading, error, refetch } = useSongs();
 
-  const [activeGenre,   setActiveGenre]   = useState('All');
-  const [searchText,    setSearchText]    = useState('');
-  const [searchFocused, setSearchFocused] = useState(false);
+  const [activeGenre,    setActiveGenre]    = useState('All');
+  const [searchText,     setSearchText]     = useState('');
+  const [searchFocused,  setSearchFocused]  = useState(false);
+  const [history,        setHistory]        = useState(readHistory);
   const [featuredPlaylists, setFeaturedPlaylists] = useState([]);
+
+  const inputRef     = useRef(null);
+  const wrapRef      = useRef(null);
+  const blurTimerRef = useRef(null);
+
   const { recentlyPlayed, playSong, currentSong, isPlaying } = usePlayer();
 
-  /* ── Featured playlists (Firestore) ─────────────────────────────────────── */
+  // Show history dropdown: focused + no text typed + history exists
+  const showHistory = searchFocused && searchText.trim() === '' && history.length > 0;
+
+  /* ── Close dropdown on outside click ────────────────────────────────────── */
+  useEffect(() => {
+    const handler = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
+        setSearchFocused(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  /* ── Featured playlists ──────────────────────────────────────────────────── */
   useEffect(() => {
     const fetchFeatured = async () => {
       try {
@@ -60,7 +116,7 @@ const Home = () => {
     return ['All', ...Array.from(g).sort()];
   }, [songs]);
 
-  // Local filter — searches title + artist in memory, zero network calls, zero navigation
+  // Local filter — no API call, no navigation
   const filtered = useMemo(() => {
     let result = activeGenre === 'All' ? songs : songs.filter((s) => s.genre === activeGenre);
     if (searchText.trim().length >= 1) {
@@ -87,6 +143,45 @@ const Home = () => {
       .slice(0, 10);
   }, [recentlyPlayed, songs]);
 
+  /* ── Handlers ────────────────────────────────────────────────────────────── */
+  const handleFocus = () => {
+    clearTimeout(blurTimerRef.current);
+    setSearchFocused(true);
+  };
+
+  const handleBlur = () => {
+    blurTimerRef.current = setTimeout(() => setSearchFocused(false), 150);
+  };
+
+  const handleClear = () => {
+    setSearchText('');
+    inputRef.current?.focus();
+  };
+
+  // Save to history whenever a song is played from Home
+  const handlePlaySong = (song, queue) => {
+    playSong(song, queue);
+    setHistory(addToHistory(song));
+  };
+
+  // Play from history item
+  const handlePlayFromHistory = (item) => {
+    const song = songs.find((s) => s.id === item.id);
+    if (song) handlePlaySong(song, songs);
+    setSearchFocused(false);
+  };
+
+  const handleRemoveHistory = (e, id) => {
+    e.stopPropagation();
+    setHistory(removeFromHistory(id));
+  };
+
+  const handleClearAllHistory = () => {
+    saveHistory([]);
+    setHistory([]);
+  };
+
+  /* ── Render ──────────────────────────────────────────────────────────────── */
   if (loading) return <Loader />;
 
   if (error) {
@@ -107,51 +202,103 @@ const Home = () => {
       <Navbar />
       <div style={styles.container}>
 
-        {/* ── Page header + inline filter ──────────────────────────────────── */}
+        {/* ── Header + inline filter ────────────────────────────────────────── */}
         <div style={styles.header}>
           <div>
             <h1 style={styles.heading}>Your Library</h1>
             <p style={styles.subheading}>{songs.length} songs available</p>
           </div>
 
-          {/* Inline filter — purely local, NEVER navigates */}
-          <div style={{
-            ...styles.searchWrap,
-            borderColor: searchFocused ? '#22c55e' : '#2d2d2d',
-            boxShadow:   searchFocused ? '0 0 0 3px rgba(34,197,94,0.1)' : 'none',
-          }}>
-            <svg width="16" height="16" viewBox="0 0 20 20" fill="none"
-              style={{ flexShrink: 0, color: searchFocused ? '#22c55e' : '#6b7280', transition: 'color 0.2s' }}>
-              <circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" strokeWidth="1.5"/>
-              <path d="M14 14l3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-            </svg>
-            <input
-              type="text"
-              placeholder="Filter songs or artists…"
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              onFocus={() => setSearchFocused(true)}
-              onBlur={() => setSearchFocused(false)}
-              style={styles.searchInput}
-              autoComplete="off"
-              spellCheck={false}
-            />
-            {searchText.length > 0 && (
-              <button
-                onClick={() => setSearchText('')}
-                style={styles.clearBtn}
-                aria-label="Clear filter"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="18" y1="6" x2="6" y2="18"/>
-                  <line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-              </button>
+          {/* Search box + history dropdown */}
+          <div ref={wrapRef} style={styles.searchOuter}>
+            <div style={{
+              ...styles.searchWrap,
+              borderColor: searchFocused ? '#22c55e' : '#2d2d2d',
+              boxShadow:   searchFocused ? '0 0 0 3px rgba(34,197,94,0.1)' : 'none',
+              borderBottomLeftRadius:  showHistory ? 0 : 10,
+              borderBottomRightRadius: showHistory ? 0 : 10,
+            }}>
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none"
+                style={{ flexShrink: 0, color: searchFocused ? '#22c55e' : '#6b7280', transition: 'color 0.2s' }}>
+                <circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" strokeWidth="1.5"/>
+                <path d="M14 14l3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+              <input
+                ref={inputRef}
+                type="text"
+                placeholder="Filter songs or artists…"
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                onFocus={handleFocus}
+                onBlur={handleBlur}
+                style={styles.searchInput}
+                autoComplete="off"
+                spellCheck={false}
+              />
+              {searchText.length > 0 && (
+                <button onClick={handleClear} style={styles.clearBtn} aria-label="Clear filter">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              )}
+            </div>
+
+            {/* ── History dropdown ────────────────────────────────────────── */}
+            {showHistory && (
+              <div style={styles.historyDropdown}>
+                <div style={styles.historyHeader}>
+                  <span style={styles.historyLabel}>Recent searches</span>
+                  <button
+                    onMouseDown={handleClearAllHistory}
+                    style={styles.clearAllBtn}
+                  >
+                    Clear all
+                  </button>
+                </div>
+                {history.map((item) => (
+                  <div
+                    key={item.id}
+                    style={styles.historyRow}
+                    onMouseDown={() => handlePlayFromHistory(item)}
+                  >
+                    <div style={styles.historyIconWrap}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                        stroke="#6b7280" strokeWidth="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <polyline points="12 6 12 12 16 14"/>
+                      </svg>
+                    </div>
+                    <img
+                      src={item.coverUrl || 'https://placehold.co/34x34/111/555?text=♪'}
+                      alt=""
+                      style={styles.historyCover}
+                      onError={(e) => { e.target.src = 'https://placehold.co/34x34/111/555?text=♪'; }}
+                    />
+                    <div style={styles.historyInfo}>
+                      <p style={styles.historyTitle}>{item.title}</p>
+                      <p style={styles.historyArtist}>{item.artist}</p>
+                    </div>
+                    <button
+                      onMouseDown={(e) => handleRemoveHistory(e, item.id)}
+                      style={styles.historyRemoveBtn}
+                      aria-label="Remove"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" strokeWidth="2.5">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </div>
 
-        {/* ── Featured / Pinned Songs (hidden while filtering) ─────────────── */}
+        {/* ── Featured Songs (hidden while filtering) ───────────────────────── */}
         {featuredSongs.length > 0 && !searchText && (
           <div style={styles.section}>
             <h2 style={styles.sectionTitle}><StarIcon /> Featured</h2>
@@ -162,7 +309,7 @@ const Home = () => {
                 return (
                   <div
                     key={song.id}
-                    onClick={() => playSong(song, featuredSongs)}
+                    onClick={() => handlePlaySong(song, featuredSongs)}
                     style={{
                       ...styles.featuredCard,
                       outline: active ? '2px solid #22c55e' : '2px solid transparent',
@@ -196,7 +343,7 @@ const Home = () => {
           </div>
         )}
 
-        {/* ── Recently Played (hidden while filtering) ─────────────────────── */}
+        {/* ── Recently Played (hidden while filtering) ──────────────────────── */}
         {recentSongs.length > 0 && !searchText && (
           <div style={styles.section}>
             <h2 style={styles.sectionTitle}><ClockIcon /> Recently Played</h2>
@@ -204,7 +351,7 @@ const Home = () => {
               {recentSongs.map((song) => (
                 <div
                   key={song.id}
-                  onClick={() => playSong(song, recentSongs)}
+                  onClick={() => handlePlaySong(song, recentSongs)}
                   style={styles.recentChip}
                   title={`${song.title} — ${song.artist}`}
                 >
@@ -224,7 +371,7 @@ const Home = () => {
           </div>
         )}
 
-        {/* ── Featured Playlists (hidden while filtering) ──────────────────── */}
+        {/* ── Featured Playlists (hidden while filtering) ───────────────────── */}
         {featuredPlaylists.length > 0 && !searchText && (
           <div style={styles.section}>
             <h2 style={styles.sectionTitle}><PlaylistIcon /> Featured Playlists</h2>
@@ -250,7 +397,7 @@ const Home = () => {
           </div>
         )}
 
-        {/* ── Genre Pills (hidden while filtering) ─────────────────────────── */}
+        {/* ── Genre Pills (hidden while filtering) ──────────────────────────── */}
         {genres.length > 1 && !searchText && (
           <div style={styles.pillsRow}>
             {genres.map((g) => (
@@ -274,7 +421,7 @@ const Home = () => {
           </p>
         )}
 
-        {/* ── Song grid ───────────────────────────────────────────────────── */}
+        {/* ── Song grid ─────────────────────────────────────────────────────── */}
         <SongList songs={filtered} />
 
       </div>
@@ -299,12 +446,12 @@ const styles = {
   heading:   { color: '#fff', fontSize: 22, fontWeight: 700, letterSpacing: '-0.3px', marginBottom: 4 },
   subheading:{ color: '#6b7280', fontSize: 13 },
 
+  searchOuter: { position: 'relative', width: '100%', maxWidth: 340 },
   searchWrap: {
     display: 'flex', alignItems: 'center', gap: 10,
     background: '#1a1a1a', border: '1px solid #2d2d2d',
     borderRadius: 10, padding: '0 12px', height: 42,
-    width: '100%', maxWidth: 340,
-    transition: 'border-color 0.2s, box-shadow 0.2s',
+    transition: 'border-color 0.2s, box-shadow 0.2s, border-radius 0.1s',
   },
   searchInput: {
     flex: 1, background: 'transparent', border: 'none', outline: 'none',
@@ -315,6 +462,42 @@ const styles = {
     background: 'none', border: 'none', color: '#6b7280',
     cursor: 'pointer', padding: 2, display: 'flex',
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+
+  // History dropdown
+  historyDropdown: {
+    position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100,
+    background: '#1a1a1a',
+    border: '1px solid #22c55e',
+    borderTop: '1px solid #2d2d2d',
+    borderRadius: '0 0 12px 12px',
+    overflow: 'hidden',
+    boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+  },
+  historyHeader: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: '10px 14px 8px',
+    borderBottom: '1px solid #2d2d2d',
+  },
+  historyLabel:  { color: '#6b7280', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' },
+  clearAllBtn:   { background: 'none', border: 'none', color: '#22c55e', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', padding: 0 },
+  historyRow: {
+    display: 'flex', alignItems: 'center', gap: 10,
+    padding: '8px 14px', cursor: 'pointer',
+    transition: 'background 0.1s',
+    borderBottom: '1px solid #1f1f1f',
+  },
+  historyIconWrap: { flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', width: 20 },
+  historyCover:    { width: 34, height: 34, borderRadius: 6, objectFit: 'cover', flexShrink: 0 },
+  historyInfo:     { flex: 1, minWidth: 0 },
+  historyTitle:    { color: '#fff', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 2 },
+  historyArtist:   { color: '#6b7280', fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  historyRemoveBtn: {
+    background: 'none', border: 'none', color: '#4b5563',
+    cursor: 'pointer', padding: 4, display: 'flex',
+    alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0, borderRadius: '50%',
+    transition: 'color 0.15s',
   },
 
   filterInfo: { color: '#6b7280', fontSize: 13, marginBottom: 16 },
