@@ -1,55 +1,83 @@
+// controllers/search.controller.js
 const { db } = require('../config/firebase');
 
-// ─── NOTE ON SEARCH STRATEGY ─────────────────────────────────────────────────
-// Firestore range queries are case-sensitive and prefix-only.
-// FIX: We store a `titleLower` and `artistLower` field on each song document
-//      (populated at upload time in songs.controller.js) and query those fields
-//      so that searching "blinding" matches "Blinding Lights".
-//
-// If you have existing documents without these fields, run the migration script:
-//   scripts/migrateSearchFields.js
-// ─────────────────────────────────────────────────────────────────────────────
-
-exports.searchSongs = async (req, res) => {
+/**
+ * Search songs by title or artist using Firestore prefix queries.
+ * Runs two parallel prefix queries (titleLower, artistLower),
+ * deduplicates by doc ID, and returns sorted results.
+ *
+ * GET /api/search?q=<term>&limit=<number>
+ *
+ * Response: { songs: [...], total: number, query: string }
+ */
+const searchSongs = async (req, res) => {
   try {
-    const { q } = req.query;
-    if (!q || q.trim().length === 0) return res.json([]);
+    const raw = (req.query.q || '').trim();
+    const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50); // cap at 50
 
-    const searchTerm = q.toLowerCase().trim();
-    const endTerm    = searchTerm + '\uf8ff';
+    if (!raw || raw.length < 1) {
+      return res.status(200).json({ songs: [], total: 0, query: raw });
+    }
 
-    // Query both lowercase index fields in parallel
+    // Sanitise: lowercase, collapse whitespace
+    const query = raw.toLowerCase().replace(/\s+/g, ' ');
+    const end = query + '\uf8ff'; // Unicode sentinel for prefix range
+
+    const songsRef = db.collection('songs');
+
+    // Run title and artist prefix queries in parallel
     const [titleSnap, artistSnap] = await Promise.all([
-      db.collection('songs')
-        .where('titleLower', '>=', searchTerm)
-        .where('titleLower', '<=', endTerm)
-        .limit(20)
+      songsRef
+        .where('titleLower', '>=', query)
+        .where('titleLower', '<=', end)
+        .limit(limit)
         .get(),
-      db.collection('songs')
-        .where('artistLower', '>=', searchTerm)
-        .where('artistLower', '<=', endTerm)
-        .limit(20)
+      songsRef
+        .where('artistLower', '>=', query)
+        .where('artistLower', '<=', end)
+        .limit(limit)
         .get(),
     ]);
 
-    // Merge and deduplicate by doc id
-    const map = new Map();
-    for (const snap of [titleSnap, artistSnap]) {
-      snap.docs.forEach(doc => {
-        const data = doc.data();
-        map.set(doc.id, {
-          id: doc.id,
-          ...data,
-          createdAt: data.createdAt?.toDate
-            ? data.createdAt.toDate().toISOString()
-            : data.createdAt ?? null,
-        });
-      });
-    }
+    // Merge and deduplicate by document ID
+    const seen = new Set();
+    const songs = [];
 
-    res.json(Array.from(map.values()));
+    const addDocs = (snap) => {
+      snap.forEach((doc) => {
+        if (!seen.has(doc.id)) {
+          seen.add(doc.id);
+          songs.push({ id: doc.id, ...doc.data() });
+        }
+      });
+    };
+
+    addDocs(titleSnap);
+    addDocs(artistSnap);
+
+    // Sort: title matches first, then artist-only matches
+    songs.sort((a, b) => {
+      const aTitle = (a.titleLower || '').startsWith(query);
+      const bTitle = (b.titleLower || '').startsWith(query);
+      if (aTitle && !bTitle) return -1;
+      if (!aTitle && bTitle) return 1;
+      return (a.titleLower || '').localeCompare(b.titleLower || '');
+    });
+
+    const trimmed = songs.slice(0, limit);
+
+    return res.status(200).json({
+      songs: trimmed,
+      total: trimmed.length,
+      query: raw,
+    });
   } catch (err) {
-    console.error('Search error:', err.message);
-    res.status(500).json({ error: err.message });
+    console.error('[search] Error:', err.message);
+    return res.status(500).json({
+      error: 'Search failed. Please try again.',
+      code: 'SEARCH_ERROR',
+    });
   }
 };
+
+module.exports = { searchSongs };

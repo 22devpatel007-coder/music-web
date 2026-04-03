@@ -66,6 +66,12 @@ const makeRetryInterceptor = (instance) =>
       }
     }
   );
+// Use this everywhere you fetch /api/songs
+export const extractSongs = (data) =>
+  Array.isArray(data) ? data : data.songs ?? [];
+
+export const extractUsers = (data) =>
+  Array.isArray(data) ? data : data.users ?? [];
 
 makeRetryInterceptor(axiosInstance);
 makeRetryInterceptor(axiosUpload);

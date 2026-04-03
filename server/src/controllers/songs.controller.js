@@ -30,9 +30,24 @@ function serializeSong(id, data) {
 // ─── GET /api/songs ───────────────────────────────────────────────────────────
 exports.getAllSongs = async (req, res) => {
   try {
-    const snapshot = await db.collection('songs').orderBy('createdAt', 'desc').get();
-    const songs = snapshot.docs.map((doc) => serializeSong(doc.id, doc.data()));
-    res.json(songs);
+    const limit  = Math.min(parseInt(req.query.limit) || 30, 50);
+    const cursor = req.query.cursor || null;
+
+    let query = db.collection('songs').orderBy('createdAt', 'desc').limit(limit);
+    if (cursor) {
+      const cursorDoc = await db.collection('songs').doc(cursor).get();
+      if (cursorDoc.exists) query = query.startAfter(cursorDoc);
+    }
+
+    const snapshot = await query.get();
+    const songs    = snapshot.docs.map((doc) => serializeSong(doc.id, doc.data()));
+    const lastDoc  = snapshot.docs[snapshot.docs.length - 1];
+
+    res.json({
+      songs,
+      nextCursor: snapshot.docs.length === limit ? lastDoc.id : null,
+      hasMore:    snapshot.docs.length === limit,
+    });
   } catch (err) {
     console.error('getAllSongs error:', err.message);
     res.status(500).json({ error: err.message });

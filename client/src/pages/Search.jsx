@@ -31,7 +31,10 @@ const Search = () => {
       setLoading(true);
       try {
         const res = await axiosInstance.get(`/api/search?q=${encodeURIComponent(query)}`);
-        setSongs(res.data);
+        // FIX: API now returns { songs, total, query } — extract the array safely.
+        // Falls back to plain array for backwards compatibility.
+        const results = Array.isArray(res.data) ? res.data : (res.data?.songs ?? []);
+        setSongs(results);
       } catch (err) {
         console.error('Search failed:', err);
         setSongs([]);

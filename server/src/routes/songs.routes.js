@@ -6,11 +6,7 @@ const isAdmin     = require('../middleware/isAdmin');
 const upload      = require('../middleware/upload');
 const songsController = require('../controllers/songs.controller');
 
-// ─── PERMANENT FIX: Dedicated rate limiter for the duplicate-check endpoint ───
-// The global limiter (200 req / 15 min) is too loose — a bot could enumerate
-// the entire library cheaply via this endpoint.
-// isAdmin already blocks non-admins (403), but defence-in-depth: limit to
-// 30 requests / 15 min per IP regardless of auth status.
+// ─── Rate limiter for duplicate-check ─────────────────────────────────────────
 const duplicateCheckLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
@@ -20,13 +16,16 @@ const duplicateCheckLimiter = rateLimit({
 });
 
 // ─── Public routes ────────────────────────────────────────────────────────────
+// GET /api/songs              → first page  (no cursor)
+// GET /api/songs?cursor=<id>  → next page
+// GET /api/songs/:id          → single song
+//
+// NOTE: /:id must come AFTER /check-duplicate or Express matches "check-duplicate"
+// as the :id param. Order matters.
 router.get('/', songsController.getAllSongs);
 router.get('/:id', songsController.getSongById);
 
 // ─── Admin-only routes ────────────────────────────────────────────────────────
-
-// Duplicate check — called before upload, no file involved.
-// Rate-limited independently (30 / 15 min) + requires admin token.
 router.post(
   '/check-duplicate',
   duplicateCheckLimiter,
@@ -35,7 +34,6 @@ router.post(
   songsController.checkDuplicate
 );
 
-// Full song upload (song + cover required)
 router.post(
   '/',
   verifyToken,
@@ -44,7 +42,6 @@ router.post(
   songsController.uploadSong
 );
 
-// Partial update (metadata and/or cover)
 router.patch(
   '/:id',
   verifyToken,
@@ -53,7 +50,6 @@ router.patch(
   songsController.updateSong
 );
 
-// Delete
 router.delete('/:id', verifyToken, isAdmin, songsController.deleteSong);
 
 module.exports = router;
