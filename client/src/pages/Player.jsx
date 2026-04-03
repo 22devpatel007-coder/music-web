@@ -18,7 +18,9 @@ const Player = () => {
 
   useEffect(() => {
     if (song) playSong(song);
-  }, [song]); // intentionally omit playSong to avoid re-trigger on shuffle mode change
+    // playSong is stable (useCallback in PlayerActionsContext) — safe to include.
+    // song identity changes only when the route id or songs list changes.
+  }, [song, playSong]);
 
   if (loading) return <Loader />;
 

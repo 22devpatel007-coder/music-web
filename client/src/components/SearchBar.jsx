@@ -189,7 +189,7 @@ const SearchBar = () => {
     }, DEBOUNCE_MS);
 
     return () => clearTimeout(debounceRef.current);
-  }, [query, isOnSearchPage]); // intentionally omit navigate
+  }, [query, isOnSearchPage, navigate]);
 
   // ── Click outside to close ────────────────────────────────────────────────
   useEffect(() => {
@@ -321,6 +321,11 @@ const SearchBar = () => {
     <div ref={containerRef} style={styles.container}>
       <form onSubmit={handleSubmit} style={styles.form} role="search">
         <div
+          role="combobox"
+          aria-expanded={showDropdown}
+          aria-haspopup="listbox"
+          aria-controls="search-dropdown"
+          aria-owns="search-dropdown"
           style={{
             ...styles.wrap,
             borderColor: focused ? "#22c55e" : "#2d2d2d",
@@ -366,8 +371,8 @@ const SearchBar = () => {
             onKeyDown={handleKeyDown}
             style={styles.input}
             aria-label="Search songs or artists"
-            aria-expanded={showDropdown}
             aria-autocomplete="list"
+            aria-controls="search-dropdown"
             autoComplete="off"
             spellCheck={false}
           />
@@ -396,7 +401,7 @@ const SearchBar = () => {
 
         {/* ── Dropdown ───────────────────────────────────────────────────── */}
         {showDropdown && (
-          <div style={styles.dropdown} role="listbox">
+          <div id="search-dropdown" style={styles.dropdown} role="listbox">
             {/* History panel — shown only when input is empty */}
             {showHistory && (
               <>
