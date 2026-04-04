@@ -45,11 +45,11 @@ const authLimiter = rateLimit({
 });
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
-app.use('/api/auth',            authLimiter, require('./routes/auth.routes'));
-app.use('/api/songs',                        require('./routes/songs.routes'));
-app.use('/api/search',                       require('./routes/search.routes'));
-app.use('/api/users',                        require('./routes/users.routes'));
-app.use('/api/admin/playlists',              require('./routes/adminPlaylist.routes'));
+app.use('/api/auth',            authLimiter, require('./features/auth/auth.routes'));
+app.use('/api/songs',                        require('./features/songs/songs.routes'));
+app.use('/api/search',                       require('./features/search/search.routes'));
+app.use('/api/users',                        require('./features/users/users.routes'));
+app.use('/api/admin/playlists',              require('./features/playlists/adminPlaylist.routes'));
 
 // Health check
 app.get('/health', (_req, res) => res.json({ status: 'ok', ts: Date.now() }));
