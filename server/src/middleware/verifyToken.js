@@ -1,4 +1,6 @@
 const { admin } = require('../config/firebase');
+const { sendError } = require('../utils/apiResponse');
+
 
 // ─── verifyToken middleware ───────────────────────────────────────────────────
 // Validates the Firebase ID token sent in the Authorization: Bearer <token> header.
@@ -14,13 +16,13 @@ const verifyToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'No token provided', code: 'NO_TOKEN' });
+    return sendError(res, 'No token provided', 401, 'NO_TOKEN');
   }
 
   const token = authHeader.split('Bearer ')[1]?.trim();
 
   if (!token || token === 'undefined' || token === 'null') {
-    return res.status(401).json({ error: 'Invalid token format', code: 'TOKEN_INVALID_FORMAT' });
+    return sendError(res, 'Invalid token format', 401, 'TOKEN_INVALID_FORMAT');
   }
 
   try {
@@ -36,23 +38,23 @@ function handleTokenError(err, res) {
   const code = err.code || '';
 
   if (code === 'auth/id-token-expired') {
-    return res.status(401).json({ error: 'Token expired', code: 'TOKEN_EXPIRED' });
+    return sendError(res, 'Token expired', 401, 'TOKEN_EXPIRED');
   }
   if (code === 'auth/id-token-revoked') {
-    return res.status(401).json({ error: 'Token revoked — please sign in again', code: 'TOKEN_REVOKED' });
+    return sendError(res, 'Token revoked — please sign in again', 401, 'TOKEN_REVOKED');
   }
   if (code === 'auth/user-disabled') {
-    return res.status(403).json({ error: 'Account disabled', code: 'USER_DISABLED' });
+    return sendError(res, 'Account disabled', 403, 'USER_DISABLED');
   }
   if (code === 'auth/argument-error' || code === 'auth/invalid-id-token') {
-    return res.status(401).json({ error: 'Malformed token', code: 'TOKEN_MALFORMED' });
+    return sendError(res, 'Malformed token', 401, 'TOKEN_MALFORMED');
   }
   if (code === 'auth/invalid-credential') {
-    return res.status(401).json({ error: 'Token credential invalid', code: 'TOKEN_CREDENTIAL_INVALID' });
+    return sendError(res, 'Token credential invalid', 401, 'TOKEN_CREDENTIAL_INVALID');
   }
 
   console.error('[verifyToken] Unexpected error:', code, err.message);
-  return res.status(401).json({ error: 'Token verification failed', code: code || 'TOKEN_UNKNOWN_ERROR' });
+  return sendError(res, 'Token verification failed', 401, code || 'TOKEN_UNKNOWN_ERROR');
 }
 
 module.exports = verifyToken;

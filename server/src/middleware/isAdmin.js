@@ -1,4 +1,7 @@
 const { db } = require('../config/firebase');
+const config = require('../config/index');
+const { sendError } = require('../utils/apiResponse');
+
 
 // ─── isAdmin middleware ────────────────────────────────────────────────────────
 // Checks admin status in priority order:
@@ -13,7 +16,7 @@ const { db } = require('../config/firebase');
 const isAdmin = async (req, res, next) => {
   try {
     if (!req.user) {
-      return res.status(401).json({ error: 'Not authenticated' });
+      return sendError(res, 'Not authenticated', 401, 'NOT_AUTHENTICATED');
     }
 
     // 1. Token claim (production — set once via setAdminClaim.js)
@@ -22,10 +25,7 @@ const isAdmin = async (req, res, next) => {
     }
 
     // 2. Env var email match (useful for initial setup before claims are set)
-    const adminEmails = (process.env.ADMIN_EMAILS || '')
-      .split(',')
-      .map(e => e.trim().toLowerCase())
-      .filter(Boolean);
+    const adminEmails = config.adminEmails;
 
     if (adminEmails.includes(req.user.email?.toLowerCase())) {
       return next();
@@ -38,11 +38,11 @@ const isAdmin = async (req, res, next) => {
     }
 
     console.warn('[isAdmin] Access denied for:', req.user.email);
-    return res.status(403).json({ error: 'Admin access required' });
+    return sendError(res, 'Admin access required', 403, 'FORBIDDEN');
 
   } catch (err) {
     console.error('[isAdmin] Error:', err.message);
-    return res.status(500).json({ error: 'Server error in admin check' });
+    return sendError(res, 'Server error in admin check', 500, 'INTERNAL_ERROR');
   }
 };
 
