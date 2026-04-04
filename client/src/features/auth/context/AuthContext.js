@@ -11,18 +11,14 @@ const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);
 
 const REFRESH_INTERVAL_MS = 55 * 60 * 1000;
-
-// PERMANENT FIX: If onAuthStateChanged never fires (bad Firebase config,
-// network timeout, etc.), this safety timeout forces loading=false after
-// 8 seconds so the app never hangs on the loading screen forever.
-const AUTH_TIMEOUT_MS = 8000;
+const AUTH_TIMEOUT_MS     = 8000;
 
 export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
-  const [loading, setLoading]         = useState(true);
-  const [isAdmin, setIsAdmin]         = useState(false);
-  const [likedSongs, setLikedSongs]   = useState([]);
-  const [authError, setAuthError]     = useState(null);
+  const [loading,     setLoading]     = useState(true);
+  const [isAdmin,     setIsAdmin]     = useState(false);
+  const [likedSongs,  setLikedSongs]  = useState([]);
+  const [authError,   setAuthError]   = useState(null);
 
   const refreshTimerRef = useRef(null);
   const authTimeoutRef  = useRef(null);
@@ -46,10 +42,7 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   useEffect(() => {
-    // PERMANENT FIX: Safety timeout — if Firebase never calls back
-    // (misconfigured env vars, blocked network, extension interference),
-    // we stop the loading spinner so the user sees the login page
-    // instead of being stuck forever.
+    // Safety timeout — if Firebase never calls back, unblock the UI
     authTimeoutRef.current = setTimeout(() => {
       setLoading(prev => {
         if (prev) {
@@ -61,7 +54,6 @@ export const AuthProvider = ({ children }) => {
     }, AUTH_TIMEOUT_MS);
 
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      // Clear the safety timeout — Firebase responded normally
       if (authTimeoutRef.current) {
         clearTimeout(authTimeoutRef.current);
         authTimeoutRef.current = null;
@@ -70,9 +62,7 @@ export const AuthProvider = ({ children }) => {
       setCurrentUser(user);
 
       if (user) {
-        // PERMANENT FIX: Set loading=false immediately so the page renders.
-        // Background data (liked songs, admin status) loads asynchronously
-        // without blocking the UI.
+        // Unblock UI immediately — background data loads async
         setLoading(false);
 
         try {
@@ -82,13 +72,16 @@ export const AuthProvider = ({ children }) => {
           ]);
 
           if (tokenResult) {
-            setIsAdmin(tokenResult.claims.role === 'admin');
+            // FIX: setAdminClaim.js sets `admin: true` on the token claims.
+            // The correct check is `claims.admin === true`, NOT `claims.role === 'admin'`.
+            // Using the wrong key means isAdmin is always false → AdminRoute
+            // redirects every admin user to /home, rendering the wrong page.
+            setIsAdmin(tokenResult.claims.admin === true);
           }
 
           if (userDocSnap && userDocSnap.exists()) {
             setLikedSongs(userDocSnap.data().likedSongs || []);
           } else if (userDocSnap !== null) {
-            // First-time Google sign-in — create user doc
             await setDoc(doc(db, 'users', user.uid), {
               uid:         user.uid,
               email:       user.email,
@@ -100,22 +93,17 @@ export const AuthProvider = ({ children }) => {
             setLikedSongs([]);
           }
         } catch (err) {
-          // Non-fatal — user is still logged in, just missing liked songs / admin flag
           console.warn('[AuthContext] Background data fetch failed:', err.message);
         }
 
         startTokenRefreshTimer(user);
       } else {
-        // Logged out
         setIsAdmin(false);
         setLikedSongs([]);
         stopTokenRefreshTimer();
         setLoading(false);
       }
     },
-    // PERMANENT FIX: Handle Firebase auth errors (e.g. API key invalid).
-    // Without this second argument, auth errors are silent and loading
-    // stays true forever.
     (error) => {
       console.error('[AuthContext] onAuthStateChanged error:', error.code, error.message);
       if (authTimeoutRef.current) {
