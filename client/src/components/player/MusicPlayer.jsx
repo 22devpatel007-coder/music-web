@@ -1,38 +1,27 @@
-// PERMANENT FIX SUMMARY for MusicPlayer.jsx:
-//
-// 1. React.memo — prevents re-render when parent re-renders but props haven't
-//    changed. MusicPlayer has no props, so this alone blocks all upstream
-//    re-renders from reaching this component.
-//
-// 2. usePlayerState / usePlayerActions split — MusicPlayer subscribes to
-//    both. Other components (SongCard, etc.) that only need to call playSong
-//    can import usePlayerActions and will NEVER re-render from state changes.
-//
-// 3. progress/duration/seeking stay LOCAL — they were already local in the
-//    original file, which was correct. The seek bar updates via the
-//    'timeupdate' listener — this must never touch a Context value, otherwise
-//    every subscriber re-renders on every tick.
-//
-// 4. CSS custom property trick for the progress gradient — updating
-//    style={{ '--pct': `${pct}%` }} is a direct DOM mutation (no React
-//    re-render). The progress bar visually updates without triggering any
-//    React render cycle. This is the correct pattern for high-frequency DOM
-//    updates in React.
-//
-// ── NEW FIX (player controls not visible) ────────────────────────────────────
-// Root cause: `.player-side-btns` had `style={{ display: "none" }}` as an
-// INLINE style. Inline styles always override CSS stylesheet rules including
-// media queries. So even when the @media (max-width: 640px) rule tried to set
-// `display: flex !important`, the inline `display: none` silently won.
-//
-// Fix: Remove the inline `display: "none"` from player-side-btns entirely.
-// The CSS already handles visibility correctly via media queries:
-//   - Above 900px : .player-vol is visible, .player-side-btns is hidden
-//   - Below 900px : .player-vol is hidden,  .player-side-btns is visible
-// The CSS default (no media query) for .player-side-btns is now `display:none`
-// in the stylesheet, not inline, so media queries can override it properly.
+/**
+ * client/src/components/player/MusicPlayer.jsx
+ *
+ * BUG 5 FIX: CSS custom property --pct on <input> doesn't work reliably
+ *   in Firefox and Safari for ::webkit-slider-runnable-track and
+ *   ::-moz-range-progress pseudo-elements. The browser does not always
+ *   inherit custom properties down into these pseudo-elements.
+ *
+ *   Old broken approach:
+ *     style={{ "--pct": `${pct}%` }}
+ *     background: linear-gradient(to right, #22c55e var(--pct), #3d3d3d var(--pct))
+ *
+ *   Fix: Use a ref + direct DOM style mutation to set the CSS custom property
+ *   on the input element itself. This is a direct DOM write — no React re-render,
+ *   and the property is set on the exact element whose pseudo-elements need it.
+ *   Works in Chrome, Firefox, and Safari.
+ *
+ * All other fixes from playerStore.js and queueStore.js apply here too:
+ *   - playSong() no longer receives queue as argument
+ *   - resumeSong() is now async — this component's togglePlay() is unchanged
+ *     because MusicPlayer calls the store actions, not audio directly.
+ */
 
-import { useState, useEffect, memo } from "react";
+import { useState, useEffect, useRef, memo, useCallback } from "react";
 import { usePlayerStore, audio } from "../../store/playerStore";
 import { useQueueStore } from "../../store/queueStore";
 
@@ -53,24 +42,48 @@ const MusicPlayer = memo(() => {
   const { queue: songs, removeFromQueue } = useQueueStore();
 
   const [showQueue, setShowQueue] = useState(false);
-  const toggleQueue = () => setShowQueue(!showQueue);
-  const togglePlay = () => (isPlaying ? pauseSong() : resumeSong());
+  const toggleQueue = useCallback(() => setShowQueue((v) => !v), []);
+  const togglePlay = useCallback(
+    () => (isPlaying ? pauseSong() : resumeSong()),
+    [isPlaying, pauseSong, resumeSong],
+  );
 
-  const cycleRepeat = () => {
+  const cycleRepeat = useCallback(() => {
     const modes = ["none", "all", "one"];
     setRepeatMode(modes[(modes.indexOf(repeatMode) + 1) % 3]);
-  };
+  }, [repeatMode, setRepeatMode]);
 
-  const cycleShuffleMode = () => toggleShuffle();
   const shuffleMode = isShuffle ? "classic" : "none";
+  const cycleShuffleMode = useCallback(() => toggleShuffle(), [toggleShuffle]);
 
-  // PERMANENT FIX: progress, duration, seeking are LOCAL state — never in
-  // context. 'timeupdate' fires ~4-60x per second depending on browser.
+  // ── Progress — LOCAL state only, never in Zustand ─────────────────────────
+  // timeupdate fires up to 60x/sec. Putting this in Zustand would cause
+  // every store subscriber to re-render on every tick. Keep it local.
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
   const [mini, setMini] = useState(false);
   const [seeking, setSeeking] = useState(false);
+
+  // BUG 5 FIX: Refs to the range inputs so we can set --pct directly on the
+  // DOM node. This is a direct DOM write — zero React re-renders.
+  const seekRef = useRef(null);
+  const volumeRef = useRef(null);
+
+  // Update --pct on the seek bar whenever progress or duration changes
+  useEffect(() => {
+    const pct = duration ? (progress / duration) * 100 : 0;
+    if (seekRef.current) {
+      seekRef.current.style.setProperty("--pct", `${pct}%`);
+    }
+  }, [progress, duration]);
+
+  // Update --pct on the volume bar whenever volume changes
+  useEffect(() => {
+    if (volumeRef.current) {
+      volumeRef.current.style.setProperty("--pct", `${volume * 100}%`);
+    }
+  }, [volume]);
 
   useEffect(() => {
     const update = () => {
@@ -85,18 +98,21 @@ const MusicPlayer = memo(() => {
     };
   }, [seeking]);
 
-  const handleSeekStart = () => setSeeking(true);
-  const handleSeekChange = (e) => setProgress(Number(e.target.value));
-  const handleSeekEnd = (e) => {
+  const handleSeekStart = useCallback(() => setSeeking(true), []);
+  const handleSeekChange = useCallback(
+    (e) => setProgress(Number(e.target.value)),
+    [],
+  );
+  const handleSeekEnd = useCallback((e) => {
     audio.currentTime = Number(e.target.value);
     setSeeking(false);
-  };
+  }, []);
 
-  const handleVolume = (e) => {
+  const handleVolume = useCallback((e) => {
     const v = Number(e.target.value);
     audio.volume = v;
     setVolume(v);
-  };
+  }, []);
 
   const fmt = (t) => {
     if (!t || isNaN(t)) return "0:00";
@@ -105,8 +121,6 @@ const MusicPlayer = memo(() => {
       .toString()
       .padStart(2, "0")}`;
   };
-
-  const pct = duration ? (progress / duration) * 100 : 0;
 
   if (!currentSong) return null;
 
@@ -141,11 +155,9 @@ const MusicPlayer = memo(() => {
   }
 
   const shuffleLabel =
-    shuffleMode === "smart"
-      ? "Smart Shuffle — weighted cycle (click for Classic)"
-      : shuffleMode === "classic"
-        ? "Classic Shuffle — random (click to turn off)"
-        : "Shuffle off (click for Smart Shuffle)";
+    shuffleMode === "classic"
+      ? "Classic Shuffle — random (click to turn off)"
+      : "Shuffle off (click to enable)";
 
   return (
     <>
@@ -163,6 +175,9 @@ const MusicPlayer = memo(() => {
           height: 72px;
         }
 
+        /* BUG 5 FIX: --pct is set via ref.style.setProperty() in useEffect,
+           NOT via React's style prop. This ensures Firefox and Safari can read
+           the property when evaluating pseudo-element styles. */
         input[type=range].player-range {
           -webkit-appearance: none; appearance: none;
           height: 4px; border-radius: 2px; outline: none; cursor: pointer;
@@ -196,7 +211,7 @@ const MusicPlayer = memo(() => {
           background: none; border: none; cursor: pointer;
           color: #9ca3af; padding: 6px; border-radius: 6px;
           display: flex; align-items: center; justify-content: center;
-          transition: color 0.15s; flex-shrink: 0; position: relative;
+          transition: color 0.15s; flex-shrink: 0;
         }
         .ctrl-btn:hover { color: #fff; }
         .ctrl-btn.active-green { color: #22c55e; }
@@ -207,17 +222,7 @@ const MusicPlayer = memo(() => {
           padding: 1px 4px; border-radius: 3px; line-height: 1.4;
           pointer-events: none; flex-shrink: 0;
         }
-        .shuffle-badge.smart   { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
         .shuffle-badge.classic { background: rgba(251,191,36,0.15); color: #fbbf24; border: 1px solid rgba(251,191,36,0.3); }
-
-        .ctrl-btn[data-tooltip]:hover::after {
-          content: attr(data-tooltip);
-          position: absolute; bottom: calc(100% + 6px); left: 50%;
-          transform: translateX(-50%);
-          background: #111; color: #e5e7eb; font-size: 11px;
-          white-space: nowrap; padding: 5px 8px; border-radius: 6px;
-          border: 1px solid #2d2d2d; pointer-events: none; z-index: 99;
-        }
 
         .play-btn {
           width: 38px; height: 38px; background: #22c55e;
@@ -227,8 +232,7 @@ const MusicPlayer = memo(() => {
         }
         .play-btn:hover { background: #16a34a; transform: scale(1.06); }
 
-        /* ── FIXED: player-side-btns default is none in CSS (not inline) ── */
-        /* This allows the @media rules below to override it with !important */
+        /* Default hidden via CSS (not inline style) so @media can override */
         .player-side-btns { display: none; }
         .player-vol       { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
 
@@ -371,14 +375,15 @@ const MusicPlayer = memo(() => {
         <div style={styles.seekRow}>
           <span style={styles.timeLabel}>{fmt(progress)}</span>
           <div className="seek-wrap" style={{ flex: 1 }}>
+            {/* BUG 5 FIX: ref attached, no style={{ "--pct" }} prop here */}
             <input
+              ref={seekRef}
               type="range"
               className="player-range"
               min="0"
               max={duration || 0}
               value={progress}
               step="0.1"
-              style={{ "--pct": `${pct}%` }}
               onMouseDown={handleSeekStart}
               onTouchStart={handleSeekStart}
               onChange={handleSeekChange}
@@ -390,7 +395,7 @@ const MusicPlayer = memo(() => {
         </div>
 
         <div className="player-inner">
-          {/* ── Song info (left column) ─────────────────────────────────── */}
+          {/* ── Song info ─────────────────────────────────────────────────── */}
           <div className="player-song-info" style={styles.songInfo}>
             <img
               src={currentSong.coverUrl}
@@ -406,16 +411,13 @@ const MusicPlayer = memo(() => {
             </div>
           </div>
 
-          {/* ── Transport controls (center column) ─────────────────────── */}
+          {/* ── Transport controls ────────────────────────────────────────── */}
           <div className="player-controls" style={styles.controls}>
             <div className="hide-mobile shuffle-btn-wrap">
               <button
                 className={`ctrl-btn${shuffleMode !== "none" ? " active-green" : ""}`}
                 onClick={cycleShuffleMode}
                 title={shuffleLabel}
-                data-tooltip={
-                  shuffleMode === "none" ? "Classic Shuffle" : "Shuffle Off"
-                }
                 style={shuffleMode === "classic" ? { color: "#fbbf24" } : {}}
               >
                 {shuffleMode === "classic" ? (
@@ -448,12 +450,12 @@ const MusicPlayer = memo(() => {
             </button>
           </div>
 
-          {/* ── Volume + Queue + Minimize (right column, desktop only) ──── */}
-          {/* FIXED: removed inline style={{ display: "none" }} from player-side-btns */}
-          {/* CSS class .player-vol now controls desktop visibility via stylesheet */}
+          {/* ── Volume + Queue + Minimize (desktop) ──────────────────────── */}
           <div className="player-vol">
             <VolumeIcon volume={volume} />
+            {/* BUG 5 FIX: ref attached, no style={{ "--pct" }} prop here */}
             <input
+              ref={volumeRef}
               type="range"
               className="player-range"
               min="0"
@@ -461,7 +463,7 @@ const MusicPlayer = memo(() => {
               step="0.01"
               value={volume}
               onChange={handleVolume}
-              style={{ "--pct": `${volume * 100}%`, width: "80px" }}
+              style={{ width: "80px" }}
             />
             <button
               className={`ctrl-btn${showQueue ? " active-green" : ""}`}
@@ -479,8 +481,7 @@ const MusicPlayer = memo(() => {
             </button>
           </div>
 
-          {/* ── Queue + Minimize (right column, tablet/mobile only) ──────── */}
-          {/* FIXED: NO inline display style here — CSS handles it */}
+          {/* ── Queue + Minimize (tablet/mobile) ─────────────────────────── */}
           <div className="player-side-btns">
             <button
               className={`ctrl-btn${showQueue ? " active-green" : ""}`}

@@ -1,29 +1,33 @@
+/**
+ * client/src/store/queueStore.js
+ *
+ * BUG 4 FIX: This file now calls registerQueueStore() after the store is
+ * created. This gives playerStore a synchronous getter for queueStore's
+ * live state without using dynamic import() inside action handlers.
+ *
+ * Why this matters:
+ *   - playerStore needs queueStore.queue in playNext/playPrev
+ *   - queueStore needs playerStore.playSong in setQueue/nextSong/prevSong
+ *   - A normal static import of queueStore inside playerStore would be circular
+ *   - The old fix used dynamic import() — async, unpredictable timing
+ *   - This fix uses a registered getter — synchronous, zero timing issues
+ */
+
 import { create } from 'zustand';
-import usePlayerStore from './playerStore';
+import usePlayerStore, { registerQueueStore } from './playerStore';
 
 const useQueueStore = create((set, get) => ({
   queue: [],
   currentIndex: 0,
 
-  // ✅ FIX Bug 2: Previously setQueue(songs) silently dropped the startIndex
-  // argument — always playing songs[0] no matter which song was clicked.
-  // Now accepts startIndex so the correct song plays immediately.
-  //
-  // ✅ FIX Bug 6: removeFromQueue was filtering by array index (i !== index)
-  // but MusicPlayer calls it with a song ID string — a string never equals
-  // a numeric index so songs were never actually removed.
-  // Now filters by song.id instead.
-
   setQueue: (songs, startIndex = 0) => {
     if (!songs || songs.length === 0) return;
 
-    // Clamp index so it never goes out of bounds
     const idx = Math.max(0, Math.min(startIndex, songs.length - 1));
-
     set({ queue: songs, currentIndex: idx });
 
-    // Play the actually clicked song, not songs[0]
-    usePlayerStore.getState().playSong(songs[idx], songs);
+    // playSong no longer needs the queue passed — it reads queueStore directly
+    usePlayerStore.getState().playSong(songs[idx]);
   },
 
   addToQueue: (song) => {
@@ -31,7 +35,6 @@ const useQueueStore = create((set, get) => ({
     set((s) => ({ queue: [...s.queue, song] }));
   },
 
-  // ✅ FIX Bug 6: filter by song.id not by array index
   removeFromQueue: (songId) => {
     set((s) => ({
       queue: s.queue.filter((song) => song.id !== songId),
@@ -43,7 +46,7 @@ const useQueueStore = create((set, get) => ({
     const nextIndex = currentIndex + 1;
     if (nextIndex < queue.length) {
       set({ currentIndex: nextIndex });
-      usePlayerStore.getState().playSong(queue[nextIndex], queue);
+      usePlayerStore.getState().playSong(queue[nextIndex]);
     }
   },
 
@@ -52,12 +55,18 @@ const useQueueStore = create((set, get) => ({
     const prevIndex = currentIndex - 1;
     if (prevIndex >= 0) {
       set({ currentIndex: prevIndex });
-      usePlayerStore.getState().playSong(queue[prevIndex], queue);
+      usePlayerStore.getState().playSong(queue[prevIndex]);
     }
   },
 
   clearQueue: () => set({ queue: [], currentIndex: 0 }),
 }));
+
+// BUG 4 FIX: Register this store's getState with playerStore.
+// playerStore.playNext/playPrev call getQueueState() synchronously —
+// this registration makes that possible without circular import or
+// dynamic import() inside action handlers.
+registerQueueStore(useQueueStore.getState);
 
 export { useQueueStore };
 export default useQueueStore;
