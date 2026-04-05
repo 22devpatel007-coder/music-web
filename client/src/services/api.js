@@ -2,7 +2,7 @@ import axios from 'axios';
 import { auth } from '../firebase';
 import { API_BASE_URL } from '../config/index';
 
-const api = axios.create({ baseURL: API_BASE_URL, withCredentials: true });
+const api = axios.create({ baseURL: `${API_BASE_URL}`, withCredentials: true });
 
 // ── Request interceptor — attach Firebase token ───────────────────────────────
 api.interceptors.request.use(
@@ -68,7 +68,7 @@ api.interceptors.response.use((response) => response, handleResponseError);
 
 // ── Upload instance (longer timeout for file uploads) ─────────────────────────
 export const axiosUpload = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: `${API_BASE_URL}/api`, // ✅ FIX: was API_BASE_URL — missing /api prefix
   withCredentials: true,
   timeout: 300_000,
 });

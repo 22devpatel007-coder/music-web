@@ -37,8 +37,8 @@ const AdminDashboard = () => {
     const fetchStats = async () => {
       try {
         const [songsRes, usersRes] = await Promise.all([
-          axiosInstance.get("/api/songs?limit=200"),
-          axiosInstance.get("/api/users"),
+          axiosInstance.get("/songs?limit=200"),
+          axiosInstance.get("/users"),
         ]);
         const songsArr = extractSongs(songsRes.data);
         const usersArr = extractUsers(usersRes.data);
