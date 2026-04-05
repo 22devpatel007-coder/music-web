@@ -18,6 +18,19 @@
 //    re-render). The progress bar visually updates without triggering any
 //    React render cycle. This is the correct pattern for high-frequency DOM
 //    updates in React.
+//
+// ── NEW FIX (player controls not visible) ────────────────────────────────────
+// Root cause: `.player-side-btns` had `style={{ display: "none" }}` as an
+// INLINE style. Inline styles always override CSS stylesheet rules including
+// media queries. So even when the @media (max-width: 640px) rule tried to set
+// `display: flex !important`, the inline `display: none` silently won.
+//
+// Fix: Remove the inline `display: "none"` from player-side-btns entirely.
+// The CSS already handles visibility correctly via media queries:
+//   - Above 900px : .player-vol is visible, .player-side-btns is hidden
+//   - Below 900px : .player-vol is hidden,  .player-side-btns is visible
+// The CSS default (no media query) for .player-side-btns is now `display:none`
+// in the stylesheet, not inline, so media queries can override it properly.
 
 import { useState, useEffect, memo } from "react";
 import { usePlayerStore, audio } from "../../store/playerStore";
@@ -38,24 +51,21 @@ const MusicPlayer = memo(() => {
   } = usePlayerStore();
 
   const { queue: songs, removeFromQueue } = useQueueStore();
-  
+
   const [showQueue, setShowQueue] = useState(false);
   const toggleQueue = () => setShowQueue(!showQueue);
-  const togglePlay = () => isPlaying ? pauseSong() : resumeSong();
+  const togglePlay = () => (isPlaying ? pauseSong() : resumeSong());
 
   const cycleRepeat = () => {
-    const modes = ['none', 'all', 'one'];
+    const modes = ["none", "all", "one"];
     setRepeatMode(modes[(modes.indexOf(repeatMode) + 1) % 3]);
   };
-  
+
   const cycleShuffleMode = () => toggleShuffle();
-  
-  const shuffleMode = isShuffle ? 'classic' : 'none';
+  const shuffleMode = isShuffle ? "classic" : "none";
 
   // PERMANENT FIX: progress, duration, seeking are LOCAL state — never in
   // context. 'timeupdate' fires ~4-60x per second depending on browser.
-  // Putting these in context would re-render every single context subscriber
-  // on every tick — the entire app tree while a song is playing.
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
@@ -75,12 +85,6 @@ const MusicPlayer = memo(() => {
     };
   }, [seeking]);
 
-  // PERMANENT FIX: iOS Safari fires touch events, not mouse events.
-  // Without onTouchStart/onTouchEnd on the seek range input, touching the
-  // seekbar on mobile never sets seeking=true — so the timeupdate listener
-  // keeps overwriting the thumb position while the user drags, causing the
-  // bar to snap back constantly. All four handlers (mouse + touch) are
-  // required for the seek-lock to work on both desktop and mobile.
   const handleSeekStart = () => setSeeking(true);
   const handleSeekChange = (e) => setProgress(Number(e.target.value));
   const handleSeekEnd = (e) => {
@@ -223,20 +227,25 @@ const MusicPlayer = memo(() => {
         }
         .play-btn:hover { background: #16a34a; transform: scale(1.06); }
 
+        /* ── FIXED: player-side-btns default is none in CSS (not inline) ── */
+        /* This allows the @media rules below to override it with !important */
+        .player-side-btns { display: none; }
+        .player-vol       { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+
         @media (max-width: 900px) {
-          .player-vol { display: none !important; }
-          .player-side-btns { display: flex !important; }
+          .player-vol       { display: none !important; }
+          .player-side-btns { display: flex !important; align-items: center; gap: 4px; justify-content: flex-end; }
         }
         @media (max-width: 640px) {
           .player-inner {
             display: flex; flex-direction: row; align-items: center;
             height: 64px; padding: 0 12px; gap: 0;
           }
-          .player-song-info { flex: 1; min-width: 0; }
-          .player-controls  { display: flex !important; align-items: center; gap: 2px; flex-shrink: 0; }
-          .hide-mobile       { display: none !important; }
-          .player-vol        { display: none !important; }
-          .player-side-btns  { display: flex !important; align-items: center; gap: 2px; flex-shrink: 0; margin-left: 4px; }
+          .player-song-info  { flex: 1; min-width: 0; }
+          .player-controls   { display: flex !important; align-items: center; gap: 2px; flex-shrink: 0; }
+          .hide-mobile        { display: none !important; }
+          .player-vol         { display: none !important; }
+          .player-side-btns   { display: flex !important; align-items: center; gap: 2px; flex-shrink: 0; margin-left: 4px; }
         }
 
         .queue-drawer {
@@ -381,6 +390,7 @@ const MusicPlayer = memo(() => {
         </div>
 
         <div className="player-inner">
+          {/* ── Song info (left column) ─────────────────────────────────── */}
           <div className="player-song-info" style={styles.songInfo}>
             <img
               src={currentSong.coverUrl}
@@ -396,6 +406,7 @@ const MusicPlayer = memo(() => {
             </div>
           </div>
 
+          {/* ── Transport controls (center column) ─────────────────────── */}
           <div className="player-controls" style={styles.controls}>
             <div className="hide-mobile shuffle-btn-wrap">
               <button
@@ -403,11 +414,7 @@ const MusicPlayer = memo(() => {
                 onClick={cycleShuffleMode}
                 title={shuffleLabel}
                 data-tooltip={
-                  shuffleMode === "none"
-                    ? "Smart Shuffle"
-                    : shuffleMode === "smart"
-                      ? "Classic Shuffle"
-                      : "Shuffle Off"
+                  shuffleMode === "none" ? "Classic Shuffle" : "Shuffle Off"
                 }
                 style={shuffleMode === "classic" ? { color: "#fbbf24" } : {}}
               >
@@ -417,9 +424,6 @@ const MusicPlayer = memo(() => {
                   <ShuffleIcon />
                 )}
               </button>
-              {shuffleMode === "smart" && (
-                <span className="shuffle-badge smart">Smart</span>
-              )}
               {shuffleMode === "classic" && (
                 <span className="shuffle-badge classic">Classic</span>
               )}
@@ -444,7 +448,10 @@ const MusicPlayer = memo(() => {
             </button>
           </div>
 
-          <div className="player-vol" style={styles.vol}>
+          {/* ── Volume + Queue + Minimize (right column, desktop only) ──── */}
+          {/* FIXED: removed inline style={{ display: "none" }} from player-side-btns */}
+          {/* CSS class .player-vol now controls desktop visibility via stylesheet */}
+          <div className="player-vol">
             <VolumeIcon volume={volume} />
             <input
               type="range"
@@ -472,7 +479,9 @@ const MusicPlayer = memo(() => {
             </button>
           </div>
 
-          <div className="player-side-btns" style={{ display: "none" }}>
+          {/* ── Queue + Minimize (right column, tablet/mobile only) ──────── */}
+          {/* FIXED: NO inline display style here — CSS handles it */}
+          <div className="player-side-btns">
             <button
               className={`ctrl-btn${showQueue ? " active-green" : ""}`}
               onClick={toggleQueue}
@@ -703,12 +712,6 @@ const styles = {
     alignItems: "center",
     gap: "6px",
     justifyContent: "center",
-  },
-  vol: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    justifyContent: "flex-end",
   },
   miniBar: {
     position: "fixed",
