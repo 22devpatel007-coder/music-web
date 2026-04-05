@@ -2,21 +2,29 @@ import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
 import { useSongs } from "../hooks/useSongs";
+import { useLikedSongs } from "../hooks/useLikedSongs";
 import Navbar from "../components/layout/Navbar";
 import SongList from "../components/songs/SongList";
 import Loader from "../components/ui/Loader";
 
 const LikedSongs = () => {
-  const { likedSongs } = useAuthStore();
-  const { data, isLoading: loading } = useSongs();
+  const { user } = useAuthStore();
+
+  // ✅ FIX: was reading likedSongs from useAuthStore — that array is never
+  // populated. The real source of truth is useLikedSongs which fetches
+  // liked song IDs from the backend via React Query.
+  const { likedSongs, isLoading: likesLoading } = useLikedSongs(user?.uid);
+
+  const { data, isLoading: songsLoading } = useSongs();
   const songs = useMemo(() => data?.pages?.flatMap((p) => p.songs) || [], [data]);
 
+  // Cross-reference liked IDs with full song objects
   const liked = useMemo(() => {
     if (!likedSongs || likedSongs.length === 0) return [];
     return songs.filter((s) => likedSongs.includes(s.id));
   }, [songs, likedSongs]);
 
-  if (loading) return <Loader />;
+  if (songsLoading || likesLoading) return <Loader />;
 
   return (
     <div style={styles.page}>
@@ -45,7 +53,9 @@ const LikedSongs = () => {
             <p style={styles.emptySubtitle}>
               Like a song to save it here for quick access.
             </p>
-            <Link to="/home" style={styles.browseBtn}>
+            {/* ✅ FIX: was linking to /home which doesn't exist in the router.
+                The home route is registered as '/' */}
+            <Link to="/" style={styles.browseBtn}>
               Browse Library
             </Link>
           </div>

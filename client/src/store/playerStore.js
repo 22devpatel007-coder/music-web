@@ -1,107 +1,108 @@
 import { create } from 'zustand';
 
-// Single shared Audio instance — exported so MusicPlayer can attach
-// its own lightweight listeners (timeupdate, loadedmetadata) without
-// duplicating playback logic.
+// ── Shared Audio instance ─────────────────────────────────────────────────────
+// Exported so MusicPlayer can attach its own lightweight listeners
+// (timeupdate, loadedmetadata) without duplicating playback logic.
 export const audio = new Audio();
 audio.preload = 'metadata';
 
-// ── Internal play helper ──────────────────────────────────────────────────────
-// Cancels any in-flight play(), sets new src, waits for canplay, then plays.
-// This is the ONLY place audio.play() is called — prevents the
-// "play() interrupted by new load request" DOMException.
-let playAbortController = null;
+// ── safePlay — the ONLY place audio.play() is called ─────────────────────────
+// FIX Bug 5: Previously audio.src was set and audio.play() was called
+// immediately — the browser hadn't loaded the file yet, causing:
+// "The play() request was interrupted by a new load request"
+//
+// Fix — 3 step process:
+//   1. Pause and cancel any previous pending load
+//   2. Set new src and wait for browser to say it's ready (canplay event)
+//   3. Only then call play()
+//
+// AbortController handles rapid song switching — if user clicks a new song
+// before the previous one loaded, the old load is cleanly cancelled.
 
-async function safePlay(src, onEnded) {
-  // Cancel previous pending play if still waiting
-  if (playAbortController) {
-    playAbortController.abort();
+let currentAbortController = null;
+
+async function safePlay(src) {
+  // Cancel any previous pending load
+  if (currentAbortController) {
+    currentAbortController.abort();
   }
-  playAbortController = new AbortController();
-  const signal = playAbortController.signal;
+  currentAbortController = new AbortController();
+  const { signal } = currentAbortController;
 
-  // Setting src triggers a load — pause first to avoid interruption warning
+  // Step 1 — pause current playback before changing src
   audio.pause();
   audio.src = src;
   audio.load();
 
-  // Remove old onended before attaching new one
-  audio.onended = null;
-
   try {
-    // Wait until browser has enough data to start playing
+    // Step 2 — wait until browser has enough data to start playing
     await new Promise((resolve, reject) => {
-      if (signal.aborted) return reject(new DOMException('Aborted', 'AbortError'));
+      if (signal.aborted) {
+        return reject(new DOMException('Aborted', 'AbortError'));
+      }
 
-      const onCanPlay = () => {
-        cleanup();
-        resolve();
-      };
-      const onError = () => {
-        cleanup();
-        reject(new Error(audio.error?.message || 'Audio load error'));
-      };
-      const onAbort = () => {
-        cleanup();
-        reject(new DOMException('Aborted', 'AbortError'));
-      };
+      const onCanPlay = () => { cleanup(); resolve(); };
+      const onError   = () => { cleanup(); reject(new Error(audio.error?.message || 'Audio failed to load')); };
+      const onAbort   = () => { cleanup(); reject(new DOMException('Aborted', 'AbortError')); };
 
       const cleanup = () => {
         audio.removeEventListener('canplay', onCanPlay);
-        audio.removeEventListener('error', onError);
-        signal.removeEventListener('abort', onAbort);
+        audio.removeEventListener('error',   onError);
+        signal.removeEventListener('abort',  onAbort);
       };
 
       audio.addEventListener('canplay', onCanPlay, { once: true });
-      audio.addEventListener('error', onError, { once: true });
-      signal.addEventListener('abort', onAbort, { once: true });
+      audio.addEventListener('error',   onError,   { once: true });
+      signal.addEventListener('abort',  onAbort,   { once: true });
     });
 
     if (signal.aborted) return;
 
-    audio.onended = onEnded;
+    // Step 3 — browser is ready, now safe to play
     await audio.play();
+
   } catch (err) {
     if (err.name === 'AbortError') {
-      // Expected — a new song was requested before this one loaded. Silently ignore.
+      // Expected when user switches songs quickly — not a real error
       return;
     }
-    // Real errors (network failure, codec unsupported, etc.)
-    console.error('[playerStore] audio playback error:', err.message);
+    // Real error — network failure, unsupported codec, etc.
+    console.error('[playerStore] Playback error:', err.message);
     throw err;
   }
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────
 const usePlayerStore = create((set, get) => ({
-  currentSong: null,
+  currentSong:    null,
   recentlyPlayed: [],
-  isPlaying: false,
-  volume: 1,
-  currentTime: 0,
-  duration: 0,
-  isShuffle: false,
-  repeatMode: 'none', // 'none' | 'all' | 'one'
+  isPlaying:      false,
+  volume:         1,
+  currentTime:    0,
+  duration:       0,
+  isShuffle:      false,
+  repeatMode:     'none', // 'none' | 'all' | 'one'
 
   // ── playSong ───────────────────────────────────────────────────────────────
   playSong: async (song, queue = []) => {
-    const src = song.audioUrl || song.fileUrl || '';
+    const src = song?.audioUrl || song?.fileUrl || '';
     if (!src) {
-      console.warn('[playerStore] playSong called with no audio URL', song);
+      console.warn('[playerStore] playSong — no audio URL on song:', song);
       return;
     }
 
-    // Optimistically update UI — show song info immediately
+    // ✅ Update UI immediately — show song info without waiting for load
     set((state) => ({
-      currentSong: song,
-      isPlaying: true,
+      currentSong:    song,
+      isPlaying:      true,
       recentlyPlayed: [
         song,
         ...state.recentlyPlayed.filter((s) => s.id !== song.id),
       ].slice(0, 20),
     }));
 
-    const onEnded = () => {
+    // Attach ended handler for auto-next
+    audio.onended = () => {
       const { repeatMode, playNext } = get();
       if (repeatMode === 'one') {
         audio.currentTime = 0;
@@ -114,25 +115,22 @@ const usePlayerStore = create((set, get) => ({
     };
 
     try {
-      await safePlay(src, onEnded);
+      await safePlay(src);
     } catch {
       // safePlay already logged — reflect failure in UI
       set({ isPlaying: false });
     }
   },
 
-  // ── playNext / playPrev ────────────────────────────────────────────────────
-  // These operate on the queue held in queueStore.
-  // Import queueStore lazily to avoid circular deps.
+  // ── playNext ───────────────────────────────────────────────────────────────
   playNext: () => {
     const { currentSong, isShuffle, repeatMode, playSong } = get();
-    // Dynamically import to avoid circular dependency at module load time
-    import('./queueStore').then(({ useQueueStore }) => {
+    import('./queueStore').then(({ default: useQueueStore }) => {
       const { queue } = useQueueStore.getState();
       if (!queue.length) return;
 
-      let nextIndex;
       const currentIndex = queue.findIndex((s) => s.id === currentSong?.id);
+      let nextIndex;
 
       if (isShuffle) {
         do {
@@ -142,7 +140,7 @@ const usePlayerStore = create((set, get) => ({
         nextIndex = currentIndex + 1;
         if (nextIndex >= queue.length) {
           if (repeatMode === 'all') nextIndex = 0;
-          else return set({ isPlaying: false });
+          else { set({ isPlaying: false }); return; }
         }
       }
 
@@ -150,14 +148,15 @@ const usePlayerStore = create((set, get) => ({
     });
   },
 
+  // ── playPrev ───────────────────────────────────────────────────────────────
   playPrev: () => {
     const { currentSong, playSong } = get();
-    // If more than 3 seconds in — restart current song
+    // If more than 3 seconds in — restart current song instead
     if (audio.currentTime > 3) {
       audio.currentTime = 0;
       return;
     }
-    import('./queueStore').then(({ useQueueStore }) => {
+    import('./queueStore').then(({ default: useQueueStore }) => {
       const { queue } = useQueueStore.getState();
       if (!queue.length) return;
       const currentIndex = queue.findIndex((s) => s.id === currentSong?.id);
@@ -175,7 +174,8 @@ const usePlayerStore = create((set, get) => ({
   resumeSong: () => {
     if (!audio.src) return;
     audio.play().catch((err) => {
-      console.error('[playerStore] resume error:', err.message);
+      console.error('[playerStore] Resume error:', err.message);
+      set({ isPlaying: false });
     });
     set({ isPlaying: true });
   },
@@ -201,14 +201,15 @@ const usePlayerStore = create((set, get) => ({
   setDuration: (d) => set({ duration: d }),
 
   // ── Shuffle / Repeat ───────────────────────────────────────────────────────
-  toggleShuffle: () => set((s) => ({ isShuffle: !s.isShuffle })),
-  setRepeatMode: (mode) => set({ repeatMode: mode }),
+  toggleShuffle:  () => set((s) => ({ isShuffle: !s.isShuffle })),
+  setRepeatMode:  (mode) => set({ repeatMode: mode }),
 
   // ── Stop ───────────────────────────────────────────────────────────────────
   stop: () => {
-    if (playAbortController) playAbortController.abort();
+    if (currentAbortController) currentAbortController.abort();
     audio.pause();
     audio.src = '';
+    audio.onended = null;
     set({ currentSong: null, isPlaying: false, currentTime: 0, duration: 0 });
   },
 }));
