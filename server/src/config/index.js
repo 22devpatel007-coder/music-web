@@ -12,7 +12,7 @@ const config = {
     apiKey: process.env.CLOUDINARY_API_KEY,
     apiSecret: process.env.CLOUDINARY_API_SECRET,
   },
-  clientOrigin: process.env.CLIENT_ORIGIN || 'http://localhost:3000',
+  clientOrigin: process.env.CLIENT_ORIGIN || 'http://localhost:3000'|| 'http://10.114.74.109:3000',
   adminEmails: process.env.ADMIN_EMAILS?.split(',') || [],
 };
 
