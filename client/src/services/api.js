@@ -2,7 +2,7 @@ import axios from 'axios';
 import { auth } from '../firebase';
 import { API_BASE_URL } from '../config/index';
 
-const api = axios.create({ baseURL: `${API_BASE_URL}`, withCredentials: true });
+const api = axios.create({ baseURL: `${API_BASE_URL}/api`, withCredentials: true });
 
 // ── Request interceptor — attach Firebase token ───────────────────────────────
 api.interceptors.request.use(
