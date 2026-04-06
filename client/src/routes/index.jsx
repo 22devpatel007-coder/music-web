@@ -2,7 +2,7 @@ import React, { Suspense, lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import ProtectedRoute from './ProtectedRoute';
 import AdminRoute from './AdminRoute';
-import { Loader } from '../components/ui/Loader';
+import  Loader from '../components/ui/Loader';
 import Home from '../pages/Home';
 import Search from '../pages/Search';
 import Login from '../pages/Login';

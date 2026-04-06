@@ -59,7 +59,7 @@ const UploadMusic = () => {
       fd.append('song',     songFile);
       fd.append('cover',    coverFile);
 
-      await axiosUpload.post('/api/songs', fd, {
+      await axiosUpload.post('/songs', fd, {
         onUploadProgress: (ev) =>
           setProgress(Math.round((ev.loaded * 100) / ev.total)),
       });
